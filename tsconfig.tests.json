@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": [
+      "bun-types"
+    ]
+  },
+  "include": [
+    "src/**/*.test.ts",
+    "scripts/**/*.ts"
+  ],
+  "exclude": []
+}

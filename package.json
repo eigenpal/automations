@@ -1,0 +1,54 @@
+{
+  "name": "@eigenpal/automations",
+  "version": "0.20.48",
+  "description": "TypeScript definitions for EigenPal agents.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eigenpal/automations.git"
+  },
+  "homepage": "https://github.com/eigenpal/automations#readme",
+  "bugs": {
+    "url": "https://github.com/eigenpal/automations/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./compiler": {
+      "types": "./dist/compiler.d.ts",
+      "import": "./dist/compiler.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.tests.json",
+    "test": "bun test src",
+    "verify-pack": "bun scripts/verify-pack.ts"
+  },
+  "peerDependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3",
+    "zod": "4.4.3",
+    "bun-types": "1.3.13"
+  }
+}
