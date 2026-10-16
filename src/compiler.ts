@@ -38,7 +38,8 @@ function compileSchema(schema: DefinitionSchema, field: string): JsonSchema {
           })
         : schema;
     const parsed = copyJsonSchema(json);
-    if (parsed.type !== 'object') throw new Error('Root schema type must be object');
+    if (Object.keys(parsed).length !== 0 && parsed.type !== 'object')
+      throw new Error('Root schema type must be object');
     return parsed;
   } catch (error) {
     throw new Error(`${field}: ${error instanceof Error ? error.message : String(error)}`);

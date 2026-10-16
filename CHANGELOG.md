@@ -1,5 +1,11 @@
 # @eigenpal/automations
 
+## 0.20.49
+
+### Patch Changes
+
+- 430b899: Agent definitions preserve explicitly unconstrained JSON schemas (`{}`), allowing existing agents to move to TypeScript without adding validation constraints.
+
 ## 0.20.48
 
 ### Minor Changes

@@ -51,7 +51,8 @@ Full JSON Schema meta-validation is not performed by this package.
 Schemas may be Zod 4 schemas or raw JSON Schema objects. Raw schemas preserve
 existing `input-schema.json` and `output-schema.json` contracts, including file
 extensions, references, defaults, and annotations, for migration. Their inferred
-TypeScript value type is `unknown`. Both schema roots must have `type: 'object'`.
+TypeScript value type is `unknown`. Schema roots must have `type: 'object'`, or be exactly `{}` to explicitly
+declare no constraints.
 Absent schemas remain absent. Raw schemas must contain only JSON values.
 
 Zod is an authoring convenience for JSON Schema validation, not a runtime parser.

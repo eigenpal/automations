@@ -77,6 +77,9 @@ void invalid;
     import { compileAgent } from '@eigenpal/automations/compiler';
     const compiled = compileAgent(createAgent({ name: 'Consumer' }));
     assert.deepEqual(compiled.manifest, { schemaVersion: 1, name: 'Consumer' });
+    const unconstrained = compileAgent(createAgent({name:'Unconstrained',inputSchema:{},outputSchema:{}}));
+    assert.deepEqual(unconstrained.inputSchema,{});
+    assert.deepEqual(unconstrained.outputSchema,{});
     await assert.rejects(import('@eigenpal/automations/migration'), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
   `,
     ],
