@@ -72,8 +72,8 @@ The versioned `CompiledDefinition<K>` envelope separates source syntax from
 runtime data. A later worker definition can share that envelope and schema
 types without changing agent configuration or adding a worker engine here.
 
-Existing agents will be converted by a coordinated platform migration. Agent
-source conversion is internal migration tooling, not part of this authoring API.
+Agents are defined in `agent.ts`. Source conversion is internal migration
+tooling, not part of this authoring API.
 
 ## Development
 

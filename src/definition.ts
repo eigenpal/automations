@@ -1,6 +1,6 @@
 import type { z } from 'zod';
 
-/** JSON Schema stays available for lossless migration of existing schema files. */
+/** Raw JSON Schema preserves complete contracts and platform-specific annotations. */
 export type JsonValue =
   | string
   | number
