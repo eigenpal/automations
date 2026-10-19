@@ -1,6 +1,6 @@
 {
   "name": "@eigenpal/automations",
-  "version": "0.20.61",
+  "version": "0.20.60",
   "description": "TypeScript definitions for EigenPal agents.",
   "type": "module",
   "license": "Apache-2.0",

@@ -1,0 +1,2 @@
+Subtotal: 100
+Currency: EUR

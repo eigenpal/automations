@@ -8,7 +8,12 @@ describe('standalone authoring contract', () => {
     expect(compileAgent(createAgent({ name: 'Standalone', triggers: { api: false } }))).toEqual({
       schemaVersion: 1,
       kind: 'agent',
-      manifest: { schemaVersion: 1, name: 'Standalone', triggers: { api: false } },
+      manifest: {
+        schemaVersion: 1,
+        name: 'Standalone',
+        filesystem: false,
+        triggers: { api: false },
+      },
     });
   });
   test('preserves required fields, constraints and file annotations', () => {

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { createAgent, type InferInput, type InferOutput } from './index.js';
+import { createAgent, createTool, type InferInput, type InferOutput } from './index.js';
 
 const invoice = createAgent({
   name: 'Invoice',
@@ -14,7 +14,7 @@ void output;
 const missing: InferInput<typeof invoice> = {};
 // @ts-expect-error Typed output retains the field type.
 const wrong: InferOutput<typeof invoice> = { total: '1' };
-// @ts-expect-error Agents do not expose worker tool callbacks yet.
+// @ts-expect-error The tools field is a named map, not an array.
 createAgent({ name: 'Agent', tools: [] });
 void missing;
 void wrong;
@@ -28,3 +28,18 @@ const partialInput: InferInput<typeof inputOnly> = { text: 'hello' };
 const partialOutput: InferOutput<typeof outputOnly> = { total: 1 };
 void partialInput;
 void partialOutput;
+
+const calculator = createTool({
+  description: 'Calculate total',
+  inputSchema: z.object({ subtotal: z.number() }),
+  outputSchema: z.object({ total: z.number() }),
+  execute: ({ subtotal }) => ({ total: subtotal * 1.2 }),
+});
+createAgent({ name: 'With tools', tools: { calculator } });
+createTool({
+  description: 'Invalid',
+  inputSchema: z.object({}),
+  outputSchema: z.object({ total: z.number() }),
+  // @ts-expect-error Tool output follows the declared output contract.
+  execute: () => ({ total: 'wrong' }),
+});
