@@ -1,5 +1,5 @@
 import { exactDiff, llmJudge, weightedScore } from '@eigenpal/automations';
-import invoice from './functional.js';
+import invoice from './functional.ts';
 
 // Reuse an agent without mutating it. Add .withFilesystem() before evaluators if needed.
 const evaluated = invoice

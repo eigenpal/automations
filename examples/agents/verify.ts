@@ -1,9 +1,9 @@
 import { compileAgent } from '@eigenpal/automations/compiler';
-import empty from './agents/invoice/variants/empty.js';
-import evaluated, { customPass } from './agents/invoice/variants/evaluated.js';
-import functional from './agents/invoice/variants/functional.js';
-import projectRoot from './agents/invoice/variants/project-root.js';
-import repository from './agents/invoice/variants/repository.js';
+import empty from './agents/invoice/variants/empty.ts';
+import evaluated, { customPass } from './agents/invoice/variants/evaluated.ts';
+import functional from './agents/invoice/variants/functional.ts';
+import projectRoot from './agents/invoice/variants/project-root.ts';
+import repository from './agents/invoice/variants/repository.ts';
 
 const definitions = [functional, repository, projectRoot, empty, evaluated, customPass].map(
   (definition) => compileAgent(definition)

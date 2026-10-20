@@ -47,8 +47,8 @@ evaluated.defineEvalPass(
   })
 );
 
-import policy from './resources/knowledge/tax-policy/resource.js';
-import checks from './resources/skills/invoice-checks/resource.js';
+import policy from './resources/knowledge/tax-policy/resource.ts';
+import checks from './resources/skills/invoice-checks/resource.ts';
 // Resource imports preserve the discriminant, preventing invalid capabilities.
 createAgent({ name: 'Portable', resources: { policy } });
 createAgent({ name: 'Filesystem' }).withFilesystem({ skills: { checks } });

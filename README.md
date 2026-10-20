@@ -42,7 +42,7 @@ shared resource fixtures. Its README includes local setup, type checks and Git i
 
 ```ts
 import { compileAgent } from '@eigenpal/automations/compiler';
-import invoice from './agent.js';
+import invoice from './agent.ts';
 
 const compiled = compileAgent(invoice);
 // { schemaVersion: 1, kind: 'agent', manifest, inputSchema?, outputSchema? }
@@ -255,9 +255,9 @@ All three work in ordinary agents:
 
 ```ts
 import { createAgent } from '@eigenpal/automations';
-import policy from '../../resources/knowledge/tax-policy/resource.js';
-import style from '../../resources/rules/invoice-style/resource.js';
-import summary from '../../resources/templates/summary/resource.js';
+import policy from '../../resources/knowledge/tax-policy/resource.ts';
+import style from '../../resources/rules/invoice-style/resource.ts';
+import summary from '../../resources/templates/summary/resource.ts';
 
 export default createAgent({
   name: 'Invoice reviewer',
@@ -292,7 +292,7 @@ export default createSkill({
 });
 
 // agents/invoice/agent.ts
-import checks from '../../resources/skills/invoice-checks/resource.js';
+import checks from '../../resources/skills/invoice-checks/resource.ts';
 // Add filesystem before defining evaluators:
 // createAgent({ ... }).withFilesystem({ skills: { checks } });
 ```

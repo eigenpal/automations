@@ -28,6 +28,10 @@ Node.js 22+ and Bun are required. The example depends on `file:../..` so it uses
 
 Hover or request completion on tool inputs, evaluator output fields, optional expected values, weight keys, and pass callback score names. All come from the schema and evaluator chain. `maxCredits` limits model credits only; `maxTimeMs` bounds active compute time. Filesystem agents need a deployment with sandbox support; functional agents do not.
 
+Relative code imports use explicit `.ts` extensions, matching the source files you
+edit. The example tsconfig enables `allowImportingTsExtensions` with `noEmit`;
+EigenPal compiles definitions rather than asking you to emit JavaScript.
+
 Definition imports may refer to local agent code or the project `resources/` tree.
 The compiler captures this static graph at the agent release commit. To explore
 another variant, open it directly; keep a literal `createAgent` call in `agent.ts`

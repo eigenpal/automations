@@ -1,5 +1,5 @@
 import { createAgent } from '@eigenpal/automations';
-import { invoiceOutput } from '../shared/invoice-schema.js';
+import { invoiceOutput } from '../shared/invoice-schema.ts';
 
 export default createAgent({
   name: 'Empty-workspace invoice agent',
