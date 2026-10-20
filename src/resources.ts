@@ -30,7 +30,8 @@ const path = z
   .refine(
     (value) =>
       !value.startsWith('/') &&
-      !value.includes('\\') && !Array.from(value).some(char=>char.charCodeAt(0)<32 || char.charCodeAt(0)===127) &&
+      !value.includes('\\') &&
+      !Array.from(value).some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127) &&
       value
         .split('/')
         .every(
