@@ -3,6 +3,7 @@ import { agentConfigSchema } from './config.js';
 import type { AgentCore, CompiledAgent, DefinitionSchema, JsonSchema } from './definition.js';
 import { normalizeEvaluator, validateEvaluatorName, validateWeightedPass } from './evaluation.js';
 import { copyJsonSchema } from './json-schema.js';
+import { resourceMapSchema } from './resources.js';
 
 const portableChecks = new Set([
   'less_than',
@@ -55,13 +56,12 @@ export function compileAgent<
   if (definition.kind !== 'agent') throw new Error('compileAgent expects an agent definition');
   if (definition.config.workspace !== undefined && definition.config.filesystem !== true)
     throw new Error('workspace requires filesystem capability');
+  const resources = resourceMapSchema.parse(definition.resources ?? {});
   if (
-    definition.config.workspace?.cwd === null &&
-    Object.keys(definition.config.dependencies ?? {}).length
+    Object.values(resources).some((resource) => resource.kind === 'skill') &&
+    (definition.config.filesystem !== true || definition.config.workspace?.cwd === null)
   )
-    throw new Error(
-      'Shared file dependencies require a repository working directory; use files with cwd: null'
-    );
+    throw new Error('Skills require a repository filesystem workspace');
   const tools = Object.fromEntries(
     Object.entries(definition.tools ?? {}).map(([name, tool]) => {
       if (
@@ -147,6 +147,7 @@ export function compileAgent<
   return {
     ...(compiledEvaluation ? { evaluation: compiledEvaluation } : {}),
     ...(Object.keys(tools).length ? { tools } : {}),
+    ...(Object.keys(resources).length ? { resources } : {}),
     schemaVersion: 1,
     kind: 'agent',
     manifest: {

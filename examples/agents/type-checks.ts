@@ -46,3 +46,15 @@ evaluated.defineEvalPass(
     threshold: 0.9,
   })
 );
+
+import policy from './resources/knowledge/tax-policy/resource.js';
+import checks from './resources/skills/invoice-checks/resource.js';
+// Resource imports preserve the discriminant, preventing invalid capabilities.
+createAgent({ name: 'Portable', resources: { policy } });
+createAgent({ name: 'Filesystem' }).withFilesystem({ skills: { checks } });
+// @ts-expect-error Directory skills are filesystem-only.
+createAgent({ name: 'Invalid', resources: { checks } });
+// @ts-expect-error Knowledge is portable content, not a directory skill.
+createAgent({ name: 'Invalid' }).withFilesystem({ skills: { policy } });
+// @ts-expect-error Shared resource references are imports, never unchecked version strings.
+createAgent({ name: 'Invalid', dependencies: { 'workspace:resources.knowledge.typo': '1.0.0' } });

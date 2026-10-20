@@ -142,8 +142,7 @@ agent identity; the display name can change without changing that identity.
 - `tools`: optional map of names to `createTool(...)` definitions. Names become model-facing tool names. At most 16; built-in names such as `read`, `write`, `bash` and `finish` are reserved.
 - `guards`: optional array of positive limits. `maxTurns(n)` bounds model requests, including retries; `maxTimeMs(n)` bounds active execution time, including preparation but excluding time parked for human review; `maxCredits(n)` bounds model credits only. One credit is one cent. `maxTimeMs(n)` bounds active sandbox execution time; sandbox compute is billed separately. Repeated limits use the strictest value and continue across human-review resumes. Platform ceilings remain 128 turns, 20 active minutes and 10,000 model credits, with any tighter deployment settings still applying. Conservative request admission can stop before the exact limit when the remaining balance cannot cover the next bounded request.
 - `triggers`: optional `{ api, email: { enabled, aliases } }`. API defaults to enabled; absent email is disabled. Aliases may be addresses or objects with `address`, `allowlist`, `replyConfig`, `requireSenderAuth` and `enabled`. An omitted allowlist preserves platform ownership; `[]` denies all senders. Existing email routing rules continue to apply.
-- `dependencies`: optional exact-version map for shared workspace resources or agent packages, for example `{ 'workspace:resources.skills.validate': '1.0.0' }`. Local package files are already in Git and do not belong here. This is separate from Python/npm dependencies below; listing an agent dependency does not yet make it a callable tool.
-  Evaluators are registered through the chain below, never a `createAgent` property.
+- `resources`: optional map of imported knowledge, rules and templates. Keys are local aliases; TypeScript checks each imported definition. See shared resources below. Evaluators are registered through the chain, never a `createAgent` property.
 
 `createTool` properties:
 
@@ -200,12 +199,13 @@ export default invoiceReviewer.withFilesystem({
 The definition and instructions still come from the pinned source snapshot, but
 repository files, manifests and repository environment declarations are not loaded.
 Use `files` for initial content and `packages` for additional installed libraries.
-Shared file `dependencies` require repository mode and are rejected with `cwd: null`.
+Portable resource text remains available with `cwd: null`. Resource asset files and skills require repository mode.
 Platform tools and run input/output paths remain outside the working directory.
 
 Filesystem options:
 
 - `cwd`: omit it to start in the folder exporting the agent; use a repository-relative existing directory to override it, or `'.'` for the repository root. Set `null` to skip the execution checkout and start with an empty working directory populated only by `files`. An empty string is rejected. String paths must remain inside the checkout after symlink resolution. The option selects initial content/location, not sandbox filesystem permissions.
+- `skills`: optional map of imported `createSkill` definitions. Directory skills and their helper files require repository mode, so `cwd: null` rejects them.
 - `files`: optional map of relative paths to text. At most 100 files and 256 KiB total UTF-8 paths/content. Creates missing directories. Identical existing content is accepted; differing content, symlinks, traversal, absolute paths and managed directories (`.git`, `.eigenpal`, `node_modules`, `eigenpal_modules`) fail before model execution. Binary assets and larger files belong in Git or normal run file inputs. Seed files initialize the workspace; they do not update the Git repository.
 - `packages.python`: optional package-to-exact-version map, such as `{ numpy: '2.3.3' }`. Combined with `requirements.txt` in the selected directory in one `uv` install, so conflicting requirements fail.
 - `packages.npm`: optional package-to-exact-version map, such as `{ 'decimal.js': '10.6.0' }`. Combined with the selected directory's `package.json`; conflicting declared versions fail. Existing `bun.lock` is reused by the current installer. This pins declared direct versions; it does not promise a fully locked transitive environment.
@@ -225,6 +225,119 @@ Monty are outside this PR.
 On deployments without a sandbox provider, ordinary agents still run. Starting a
 filesystem agent returns `agent_capability_unavailable` before model execution or
 sandbox provisioning; it never silently downgrades the agent.
+
+## Shared resources
+
+Define each resource in `resources/<kind>/<slug>/resource.ts`, default export it,
+and import it into the agent. There is no resource YAML declaration or string
+version map. TypeScript catches missing imports and incompatible resource kinds.
+The agent release pins its entire source commit, including imported resources.
+Changing a resource on main never changes an already released agent or resumed run.
+
+```ts
+// resources/knowledge/tax-policy/resource.ts
+import { createKnowledge } from '@eigenpal/automations';
+export default createKnowledge({ name: 'Tax policy', content: 'Apply 20% tax.' });
+
+// resources/rules/invoice-style/resource.ts
+import { createRule } from '@eigenpal/automations';
+export default createRule({
+  name: 'Invoice style',
+  content: 'Round amounts to two decimal places.',
+});
+
+// resources/templates/summary/resource.ts
+import { createTemplate } from '@eigenpal/automations';
+export default createTemplate({ name: 'Summary', content: 'Invoice total: {{total}}' });
+```
+
+All three work in ordinary agents:
+
+```ts
+import { createAgent } from '@eigenpal/automations';
+import policy from '../../resources/knowledge/tax-policy/resource.js';
+import style from '../../resources/rules/invoice-style/resource.js';
+import summary from '../../resources/templates/summary/resource.js';
+
+export default createAgent({
+  name: 'Invoice reviewer',
+  instructions: 'Review the invoice using the supplied policy, rules and summary template.',
+  resources: { policy, style, summary },
+});
+```
+
+Knowledge supplies reference text; rules supply instructions; templates supply text
+to render into the answer. Both runtimes use the same compiled text. An ordinary
+agent can return template text or structured values, but filling a binary DOCX or
+XLSX requires filesystem tools. Binary bytes never enter the model prompt.
+
+Every factory accepts `name` (required), `description` (optional), `content`
+(required nonblank text), and `files` (optional supporting assets). Content may be
+inline or imported with `with { type: 'text' }`. Supporting file values are strings,
+byte imports using `with { type: 'bytes' }`, or `{ content, executable: true }` for
+a runnable helper. An explicit `{ encoding: 'base64', content }` representation is
+also accepted. Preserve relative asset paths inside a resource; traversal,
+absolute paths, symlinks and managed directories are rejected.
+
+```ts
+// resources/skills/invoice-checks/resource.ts
+import { createSkill } from '@eigenpal/automations';
+import content from './SKILL.md' with { type: 'text' };
+import helper from './scripts/check.py' with { type: 'text' };
+export default createSkill({
+  name: 'Invoice checks',
+  description: 'Check invoice arithmetic.',
+  content,
+  files: { 'scripts/check.py': helper },
+});
+
+// agents/invoice/agent.ts
+import checks from '../../resources/skills/invoice-checks/resource.js';
+// Add filesystem before defining evaluators:
+// createAgent({ ... }).withFilesystem({ skills: { checks } });
+```
+
+Skills remain directory skills, including `SKILL.md` and arbitrary helper files;
+they cannot be passed to ordinary `resources`. In repository mode assets are
+installed below `/workspace/agent/.eigenpal-resources/<alias>/`, and the agent
+receives that location. Skill helper paths stay relative to the skill directory.
+`cwd` changes the initial working directory; it does not relocate resource assets.
+Seed `files` are relative to `cwd`. Differing files never silently overwrite each
+other. With `cwd: null`, only seed files populate the empty workspace; portable
+resource text still reaches the agent, and resource assets are not installed.
+
+For binary templates, provide a meaningful text representation plus the original
+asset, for example `createTemplate({ name: 'Invoice', content: 'Fill total and tax.',
+files: { 'invoice.docx': documentBytes } })`. A filesystem agent gets both; a normal
+agent gets the text contract. Installing a skill or template never executes its
+files during compilation; only the bounded definition module is evaluated.
+
+Limits: 32 resources per agent, 64 supporting files per resource, 128 KiB primary
+text, 256 KiB per text file, 512 KiB encoded per binary file, and 1 MiB combined
+resource data. The captured definition/import graph is limited to 128 files and
+2 MiB. Only SDK, Zod, local agent modules and project `resources/` imports are
+available to the compiler. Host packages, credentials and arbitrary filesystem
+reads remain unavailable. Explicit imported assets can have any safe filename.
+
+For IDE support, declare asset modules in a project `assets.d.ts`:
+
+```ts
+declare module '*.md' {
+  const content: string;
+  export default content;
+}
+declare module '*.py' {
+  const content: string;
+  export default content;
+}
+declare module '*.docx' {
+  const content: Uint8Array;
+  export default content;
+}
+```
+
+The [complete examples](examples/agents) include every resource kind, a binary
+template, skill helpers, both runtime modes, and negative TypeScript checks.
 
 ## Run, edit and resume
 

@@ -13,6 +13,7 @@ import {
   validateEvaluatorName,
   validateWeightedPass,
 } from './evaluation.js';
+import { resourceMapSchema } from './resources.js';
 
 export type {
   AgentConfig,
@@ -37,15 +38,17 @@ export function createAgent<
   I extends DefinitionSchema | undefined = undefined,
   O extends DefinitionSchema | undefined = undefined,
 >(options: AgentOptions<I, O>): AgentDefinition<I, O> {
-  const { inputSchema, outputSchema, tools, ...config } = options;
+  const { inputSchema, outputSchema, tools, resources, ...config } = options;
+  const portable = resourceMapSchema.parse(resources ?? {});
+  if (Object.values(portable).some((resource) => resource.kind === 'skill'))
+    throw new Error('Skills require .withFilesystem({ skills })');
   const toolMap = tools === undefined ? undefined : Object.freeze({ ...tools });
-  const parsed = agentConfigSchema
-    .omit({ filesystem: true, workspace: true, evaluators: true })
-    .parse(config);
+  const parsed = agentConfigSchema.omit({ filesystem: true, workspace: true }).parse(config);
   function build(
     config: AgentConfig,
     evaluators: Record<string, Evaluator<unknown>> = {},
-    pass?: unknown
+    pass?: unknown,
+    attached = portable
   ): AgentDefinition<I, O> {
     const names = Object.keys(evaluators);
     const addEvaluator = (name: string, input: EvaluatorInput<unknown>) => {
@@ -53,7 +56,12 @@ export function createAgent<
       if (Object.hasOwn(evaluators, name)) throw new Error(`Duplicate evaluator: ${name}`);
       if (names.length >= 32) throw new Error('At most 32 evaluators are supported');
       const evaluator = normalizeEvaluator(input);
-      return build(config, { ...evaluators, [name]: Object.freeze({ ...evaluator }) });
+      return build(
+        config,
+        { ...evaluators, [name]: Object.freeze({ ...evaluator }) },
+        undefined,
+        attached
+      );
     };
     const defineEvalPass = (input: unknown) => {
       const descriptor =
@@ -67,7 +75,7 @@ export function createAgent<
         typeof (descriptor as { evaluate?: unknown }).evaluate !== 'function'
       )
         throw new Error('Invalid evaluation pass');
-      return build(config, evaluators, freezeEvaluationData({ ...descriptor }));
+      return build(config, evaluators, freezeEvaluationData({ ...descriptor }), attached);
     };
     const freeze = <T>(value: T): T => {
       if (value && typeof value === 'object') {
@@ -78,6 +86,7 @@ export function createAgent<
     };
     return Object.freeze({
       kind: 'agent' as const,
+      ...(Object.keys(attached).length ? { resources: freezeEvaluationData(attached) } : {}),
       ...(toolMap === undefined ? {} : { tools: toolMap }),
       config: freeze(config),
       ...(inputSchema === undefined ? {} : { inputSchema }),
@@ -97,13 +106,26 @@ export function createAgent<
           : {
               defineEvaluator: addEvaluator,
               withFilesystem(options: FilesystemOptions = {}) {
-                const workspace = filesystemOptionsSchema.parse(options);
+                const { skills, ...settings } = options;
+                const workspace = filesystemOptionsSchema.parse(settings);
+                const parsedSkills = resourceMapSchema.parse(skills ?? {});
+                if (Object.values(parsedSkills).some((resource) => resource.kind !== 'skill'))
+                  throw new Error('Use resources for knowledge, rules and templates');
+                if (Object.keys(parsedSkills).some((name) => Object.hasOwn(portable, name)))
+                  throw new Error('Duplicate resource name');
+                if (workspace.cwd === null && Object.keys(parsedSkills).length)
+                  throw new Error('Empty workspaces cannot install skills');
                 const { workspace: _previous, ...base } = config;
-                return build({
-                  ...base,
-                  filesystem: true,
-                  ...(Object.keys(workspace).length ? { workspace } : {}),
-                });
+                return build(
+                  {
+                    ...base,
+                    filesystem: true,
+                    ...(Object.keys(workspace).length ? { workspace } : {}),
+                  },
+                  {},
+                  undefined,
+                  { ...portable, ...parsedSkills }
+                );
               },
             }),
     }) as unknown as AgentDefinition<I, O>;
@@ -131,3 +153,13 @@ export type {
   SelectedDiffOptions,
   WeightedPass,
 } from './evaluation.js';
+
+export { createKnowledge, createRule, createSkill, createTemplate } from './resources.js';
+export type {
+  BinaryAsset,
+  PortableResource,
+  ResourceDefinition,
+  ResourceFile,
+  Skill,
+  TextAsset,
+} from './resources.js';

@@ -7,6 +7,7 @@ import type {
   EvaluatorInput,
   WeightedPass,
 } from './evaluation.js';
+import type { PortableResource, ResourceDefinition, Skill } from './resources.js';
 
 /** Raw JSON Schema preserves complete contracts and platform-specific annotations. */
 export type JsonValue =
@@ -44,6 +45,8 @@ export interface AgentEmailAlias {
 export interface FilesystemOptions {
   /** Defaults to the agent package folder. A path selects a project directory; null starts empty. */
   cwd?: string | null;
+  /** Directory skills require the filesystem capability. */
+  skills?: Record<string, Skill>;
   /** UTF-8 seed files relative to cwd. Existing differing files are never overwritten. */
   files?: Record<string, string>;
   /** Extra sandbox dependencies, combined with repository package manifests. */
@@ -63,19 +66,15 @@ export interface AgentConfig {
     api?: boolean;
     email?: { enabled?: boolean; aliases?: (string | AgentEmailAlias)[] };
   };
-  dependencies?: Record<string, string>;
-  evaluators?: {
-    passThreshold?: number;
-    items?: { use: string; weight?: number; version?: string }[];
-  };
 }
 
 export interface AgentOptions<I = DefinitionSchema, O = DefinitionSchema> extends Omit<
   AgentConfig,
-  'filesystem' | 'workspace' | 'evaluators'
+  'filesystem' | 'workspace'
 > {
   inputSchema?: I;
   outputSchema?: O;
+  resources?: Record<string, PortableResource>;
   tools?: Record<string, ToolDefinition<never, unknown>>;
 }
 
@@ -84,6 +83,7 @@ export interface AgentCore<
   O = DefinitionSchema | undefined,
 > extends AutomationDefinition<'agent', I, O> {
   readonly config: DeepReadonly<AgentConfig>;
+  readonly resources?: Readonly<Record<string, ResourceDefinition>>;
   readonly tools?: Readonly<Record<string, ToolDefinition<never, unknown>>>;
   readonly evaluation?: AgentEvaluation<InferSchema<O>, never>;
 }
@@ -135,6 +135,7 @@ export interface CompiledDefinition<K extends string> {
 
 export interface CompiledAgent extends CompiledDefinition<'agent'> {
   manifest: AgentConfig & { schemaVersion: 1; filesystem: boolean };
+  resources?: Record<string, ResourceDefinition>;
   tools?: Record<string, CompiledTool>;
   evaluation?: CompiledEvaluation;
 }

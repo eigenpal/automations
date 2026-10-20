@@ -1,5 +1,4 @@
 import { compileAgent } from '@eigenpal/automations/compiler';
-import { invoiceResources } from './agents/invoice/shared/resource-versions.js';
 import empty from './agents/invoice/variants/empty.js';
 import evaluated, { customPass } from './agents/invoice/variants/evaluated.js';
 import functional from './agents/invoice/variants/functional.js';
@@ -16,8 +15,8 @@ check(definitions[0]!.manifest.filesystem === false, 'Functional agent must not 
 check(definitions[1]!.manifest.filesystem === true, 'Repository agent must opt into a sandbox');
 check(definitions[1]!.manifest.workspace?.cwd === undefined, 'Default cwd must remain omitted');
 check(
-  JSON.stringify(definitions[1]!.manifest.dependencies) === JSON.stringify(invoiceResources),
-  'Shared versions must survive compilation'
+  Object.keys(definitions[1]!.resources ?? {}).length === 4,
+  'All four resources must survive compilation'
 );
 check(
   definitions[2]!.manifest.workspace?.cwd === '.',
@@ -27,5 +26,5 @@ check(definitions[3]!.manifest.workspace?.cwd === null, 'Empty workspace must re
 check(definitions[4]!.evaluation?.pass.kind === 'weighted', 'Weighted decision must compile');
 check(definitions[5]!.evaluation?.pass.kind === 'callback', 'Custom decision must compile');
 console.log(
-  'PASS: six agent definitions, shared resource pins, filesystem modes and both evaluation decisions. No agents or model calls were executed.'
+  'PASS: six agent definitions, imported shared resources, filesystem modes and both evaluation decisions. No agents or model calls were executed.'
 );

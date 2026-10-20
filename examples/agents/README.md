@@ -1,6 +1,6 @@
 # Agent authoring examples
 
-Open this folder in your IDE. Start at `agents/invoice/agent.ts`, which selects the repository variant. All definitions use public SDK imports. Everything is synthetic; no customer data or credentials are included.
+Open this folder in your IDE. Start at `agents/invoice/agent.ts`, which defines a filesystem agent with all four shared resource kinds. All definitions use public SDK imports. Everything is synthetic; no customer data or credentials are included.
 
 ## Set up and check
 
@@ -20,7 +20,7 @@ Node.js 22+ and Bun are required. The example depends on `file:../..` so it uses
 ## What to explore
 
 - `agents/invoice/variants/functional.ts`: no sandbox, inline instructions, Zod input/output, imported custom tool, API trigger, turn/time/model-credit guards.
-- `agents/invoice/variants/repository.ts`: `.withFilesystem()` uses the agent package folder and `AGENT.md`; local invoice/template files plus three pinned shared Git resources.
+- `agents/invoice/variants/repository.ts`: `.withFilesystem()` uses the agent package folder and `AGENT.md`; local invoice/template files plus imported knowledge, rules, template and directory skill.
 - `agents/invoice/variants/project-root.ts`: override `cwd`, seed a file, declare exact npm/Python sandbox library versions.
 - `agents/invoice/variants/empty.ts`: `cwd: null` starts with only seeded files and no repository checkout.
 - `agents/invoice/variants/evaluated.ts`: typed exact comparison, LLM judge, custom evaluator, weighted decision and an alternative boolean callback. Evaluations work with or without filesystem access. Configure filesystem before registering evaluators.
@@ -28,31 +28,42 @@ Node.js 22+ and Bun are required. The example depends on `file:../..` so it uses
 
 Hover or request completion on tool inputs, evaluator output fields, optional expected values, weight keys, and pass callback score names. All come from the schema and evaluator chain. `maxCredits` limits model credits only; `maxTimeMs` bounds active compute time. Filesystem agents need a deployment with sandbox support; functional agents do not.
 
-All helper imports stay inside `agents/invoice/`: the platform captures package-local modules, not arbitrary files elsewhere in the repository. To try another variant, change the import in `agents/invoice/agent.ts`. A local template or invoice already belongs to this package and is never listed as a shared dependency.
+Definition imports may refer to local agent code or the project `resources/` tree.
+The compiler captures this static graph at the agent release commit. To explore
+another variant, open it directly; keep a literal `createAgent` call in `agent.ts`
+for Studio's draft configuration editing.
 
-## Shared resources: two different kinds of reuse
+## Shared resources
 
-**TypeScript code reuse:** import the tool and Zod schemas in `agents/invoice/shared/`. These are checked by TypeScript and bundled with this agent. A tool callback runs in the existing isolated script runtime, with no host filesystem/network access. Installing sandbox libraries does not grant that callback new permissions.
+Each resource is defined and default exported by `resource.ts`. Open:
 
-**Versioned organization resources:** `resources/skills/invoice-checks`, `resources/knowledge/tax-policy`, and `resources/rules/invoice-style` are separate Git packages. Their existing `eigenpal.yaml` metadata is intentional. They have not migrated to a TypeScript resource-definition API. The repository variant imports a constants map of exact version pins from `shared/resource-versions.ts`; that import centralizes versions but does not prove resource names or tags exist. The CLI validates and resolves them against Git. Do not mistake this for a new typed resource factory.
+- `resources/knowledge/tax-policy/resource.ts`: imported policy text, usable by either agent mode.
+- `resources/rules/invoice-style/resource.ts`: reusable instructions, usable by either mode.
+- `resources/templates/invoice-summary/resource.ts`: a text contract plus the original DOCX bytes. Ordinary agents use the text; filesystem agents can fill the document.
+- `resources/skills/invoice-checks/resource.ts`: `SKILL.md`, a Python helper and a binary fixture. Skills require `.withFilesystem({ skills: { checks } })`.
 
-For a disposable local Git exercise, copy this example folder outside the SDK checkout, initialize it as a repository, commit the fixtures and create the three resource release tags:
+Use `resources: { policy, style, summary }` on `createAgent`, then optionally
+`.withFilesystem({ skills: { checks } })`. Imports provide IDE navigation and
+catch misspelled paths; the agent's release commit pins everything, with no string
+version map. A resource edit needs a new agent release to affect production.
 
-```sh
-git init -b main
-git add .
-git commit -m 'Add synthetic agent examples'
-git tag -a resources.skills.invoice-checks@1.0.0 -m 'Release invoice checks'
-git tag -a resources.knowledge.tax-policy@1.0.0 -m 'Release tax policy'
-git tag -a resources.rules.invoice-style@1.0.0 -m 'Release invoice style'
-cd agents/invoice
-eigenpal agents install
-eigenpal agents install --frozen-lockfile
-```
+Skill files remain a directory. The sandbox installs them under
+`/workspace/agent/.eigenpal-resources/checks/`; helpers are relative to that folder.
+Knowledge, rules and template text are compiled into both modes' instructions.
+Binary bytes never enter the prompt. `cwd` changes the initial work location,
+while resource assets retain their explicit namespace. Seed `files` are relative
+to cwd and differing existing files cause an error. `cwd: null` starts with only
+seed files, retains portable resource text and rejects skills.
 
-Use the EigenPal CLI connected to a deployment running the matching SDK feature release. CLI installation requires access to that deployment's definition compiler; the IDE/typecheck exercises above do not. The tags in these commands are local synthetic tags, not releases in your organization. Copying this folder changes the `file:../..` dependency location; link it to your local built SDK or replace it with the matching published version when available.
+TypeScript tools in `agents/invoice/shared/` are ordinary code imports.
+Their synchronous callbacks run in the bounded isolated script runtime, without
+host filesystem, network or credentials. Installing sandbox Python/npm libraries
+does not change those callback permissions.
 
-Installation puts shared files below `agents/invoice/eigenpal_modules/resources/<kind>/<slug>/` and records exact resolved commits in `.eigenpal/eigenpal.lock`. Re-running with `--frozen-lockfile` verifies the pins. Local files and shared resources keep separate paths; they are not silently merged. Seed files are relative to the selected working directory; a differing existing file causes an error rather than being overwritten. `cwd: null` cannot be combined with shared file dependencies.
+To run against a deployment with this feature, release `agents/invoice` and use
+the normal API, SDK or CLI. CLI validation/installation requires access to that
+deployment's isolated compiler. The local `typecheck` and `check` commands above
+require no deployment or credentials and perform no model calls.
 
 Datasets stay in platform storage. Evaluation selectors see the full actual output and optional, deeply partial expected output. Defining an LLM judge does not call a model during compilation; running an evaluation does.
 
