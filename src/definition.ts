@@ -7,7 +7,12 @@ import type {
   EvaluatorInput,
   WeightedPass,
 } from './evaluation.js';
-import type { PortableResource, ResourceDefinition, Skill } from './resources.js';
+import type {
+  PortableResource,
+  ResourceDeclaration,
+  ResourceDefinition,
+  Skill,
+} from './resources.js';
 
 /** Raw JSON Schema preserves complete contracts and platform-specific annotations. */
 export type JsonValue =
@@ -83,7 +88,7 @@ export interface AgentCore<
   O = DefinitionSchema | undefined,
 > extends AutomationDefinition<'agent', I, O> {
   readonly config: DeepReadonly<AgentConfig>;
-  readonly resources?: Readonly<Record<string, ResourceDefinition>>;
+  readonly resources?: Readonly<Record<string, ResourceDeclaration>>;
   readonly tools?: Readonly<Record<string, ToolDefinition<never, unknown>>>;
   readonly evaluation?: AgentEvaluation<InferSchema<O>, never>;
 }

@@ -3,6 +3,7 @@ import { agentConfigSchema } from './config.js';
 import type { AgentCore, CompiledAgent, DefinitionSchema, JsonSchema } from './definition.js';
 import { normalizeEvaluator, validateEvaluatorName, validateWeightedPass } from './evaluation.js';
 import { copyJsonSchema } from './json-schema.js';
+import { RESOURCE_TOOL_NAMES, resourceTools } from './resource-tools.js';
 import { resourceMapSchema } from './resources.js';
 
 const portableChecks = new Set([
@@ -56,12 +57,16 @@ export function compileAgent<
   if (definition.kind !== 'agent') throw new Error('compileAgent expects an agent definition');
   if (definition.config.workspace !== undefined && definition.config.filesystem !== true)
     throw new Error('workspace requires filesystem capability');
+  if (Object.values(definition.resources ?? {}).some((resource) => !('content' in resource)))
+    throw new Error(
+      'Directory resources require source capture. Run eigenpal agents validate from the agent folder against a deployment with directory resource support. compileAgent does not read local files.'
+    );
   const resources = resourceMapSchema.parse(definition.resources ?? {});
   if (
     Object.values(resources).some((resource) => resource.kind === 'skill') &&
-    (definition.config.filesystem !== true || definition.config.workspace?.cwd === null)
+    definition.config.filesystem !== true
   )
-    throw new Error('Skills require a repository filesystem workspace');
+    throw new Error('Skills require .withFilesystem()');
   const tools = Object.fromEntries(
     Object.entries(definition.tools ?? {}).map(([name, tool]) => {
       if (
@@ -71,6 +76,7 @@ export function compileAgent<
           'constructor',
           'prototype',
           'finish',
+          ...RESOURCE_TOOL_NAMES,
           'read',
           'write',
           'edit',
@@ -100,6 +106,7 @@ export function compileAgent<
     })
   );
   if (Object.keys(tools).length > 16) throw new Error('At most 16 tools are supported');
+  Object.assign(tools, resourceTools(resources));
   const evaluation = definition.evaluation;
   if (evaluation && !evaluation.pass)
     throw new Error('Evaluation registration must end with defineEvalPass');
@@ -163,3 +170,7 @@ export function compileAgent<
       : { outputSchema: compileSchema(definition.outputSchema, 'outputSchema') }),
   };
 }
+
+export { resolveDirectoryResource } from './directory-resources.js';
+
+export { resourceTools } from './resource-tools.js';

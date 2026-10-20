@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-/** Binary assets are imported as data, never executed or read by author callbacks. */
+/** Binary assets are captured as data, never executed by resource declarations. */
 export interface BinaryAsset {
   readonly encoding: 'base64';
   readonly content: string;
@@ -17,12 +17,13 @@ export interface ResourceDefinition<K extends ResourceKind = ResourceKind> {
   readonly kind: K;
   readonly name: string;
   readonly description?: string;
-  /** Portable text: reference content, rule instructions, template text, or SKILL.md. */
+  /** Rule/skill instructions, or a knowledge/template catalog description. */
   readonly content: string;
+  readonly entry?: string;
   readonly files?: Readonly<Record<string, ResourceFile>>;
 }
-export type PortableResource = ResourceDefinition<'knowledge' | 'rule' | 'template'>;
-export type Skill = ResourceDefinition<'skill'>;
+export type PortableResource = ResourceDeclaration<'knowledge' | 'rule' | 'template'>;
+export type Skill = ResourceDeclaration<'skill'>;
 
 const path = z
   .string()
@@ -50,6 +51,7 @@ export const resourceSchema = z.strictObject({
     .min(1)
     .max(128 * 1024)
     .refine((value) => !!value.trim()),
+  entry: path.optional(),
   files: z
     .record(
       path,
@@ -85,67 +87,44 @@ export const resourceMapSchema = z
     'Resource data exceeds 1 MiB'
   );
 
-export type ResourceOptions<K extends ResourceKind> = Omit<
-  ResourceDefinition<K>,
-  'kind' | 'files'
-> & {
-  files?: Readonly<
-    Record<
-      string,
-      | ResourceFile
-      | Uint8Array
-      | { readonly content: string | Uint8Array; readonly executable?: boolean }
-    >
-  >;
-};
-function encodeAsset(bytes: Uint8Array): BinaryAsset {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  let content = '';
-  for (let i = 0; i < bytes.length; i += 3) {
-    const value = (bytes[i]! << 16) | ((bytes[i + 1] ?? 0) << 8) | (bytes[i + 2] ?? 0);
-    content +=
-      chars[(value >>> 18) & 63]! +
-      chars[(value >>> 12) & 63]! +
-      (i + 1 < bytes.length ? chars[(value >>> 6) & 63]! : '=') +
-      (i + 2 < bytes.length ? chars[value & 63]! : '=');
-  }
-  return { encoding: 'base64', content };
+/** A directory declaration. The release compiler captures accompanying files. */
+export interface DirectoryResource<K extends ResourceKind = ResourceKind> {
+  readonly kind: K;
+  readonly name: string;
+  readonly description?: string;
+  /** Optional template filename, relative to this resource directory. */
+  readonly file?: string;
 }
-function create<K extends ResourceKind>(
+export type ResourceDeclaration<K extends ResourceKind = ResourceKind> =
+  | DirectoryResource<K>
+  | ResourceDefinition<K>;
+const directoryOptions = z.strictObject({
+  name: z.string().trim().min(1).max(200),
+  description: z.string().max(2000).optional(),
+});
+export const directoryResourceSchema = directoryOptions
+  .extend({
+    kind: z.enum(['knowledge', 'rule', 'template', 'skill']),
+    file: path.optional(),
+  })
+  .refine((value) => !value.file || value.kind === 'template', 'Only templates accept file');
+export const resourceDeclarationMapSchema = z
+  .record(resourceNameSchema, z.union([resourceSchema, directoryResourceSchema]))
+  .refine((resources) => Object.keys(resources).length <= 32);
+function declare<K extends ResourceKind>(
   kind: K,
-  options: ResourceOptions<K>
-): ResourceDefinition<K> {
-  const files =
-    options.files &&
-    Object.fromEntries(
-      Object.entries(options.files).map(([name, value]) => {
-        if (value instanceof Uint8Array) return [name, encodeAsset(value)];
-        if (typeof value === 'object' && value.content instanceof Uint8Array)
-          return [
-            name,
-            {
-              ...encodeAsset(value.content),
-              ...(value.executable === undefined ? {} : { executable: value.executable }),
-            },
-          ];
-        if (typeof value === 'object' && !('encoding' in value))
-          return [name, { ...value, encoding: 'utf8' }];
-        return [name, value];
-      })
-    );
-  const parsed = resourceSchema.parse({ ...options, ...(files ? { files } : {}), kind });
-  const reserved = 'SKILL.md';
-  if (kind === 'skill' && parsed.files && Object.hasOwn(parsed.files, reserved))
-    throw new Error('Resource files cannot override their content entry');
-  if (parsed.files) {
-    for (const file of Object.values(parsed.files))
-      if (typeof file === 'object') Object.freeze(file);
-    Object.freeze(parsed.files);
-  }
-  return Object.freeze(parsed) as ResourceDefinition<K>;
+  options: { name: string; description?: string; file?: string }
+): DirectoryResource<K> {
+  const parsed = (
+    kind === 'template' ? directoryOptions.extend({ file: path.optional() }) : directoryOptions
+  ).parse(options);
+  return Object.freeze({ ...parsed, kind });
 }
-export const createKnowledge = (options: ResourceOptions<'knowledge'>) =>
-  create('knowledge', options);
-export const createRule = (options: ResourceOptions<'rule'>) => create('rule', options);
-export const createTemplate = (options: ResourceOptions<'template'>) => create('template', options);
-export const createSkill = (options: ResourceOptions<'skill'>): Skill => create('skill', options);
+export const createKnowledge = (options: { name: string; description?: string }) =>
+  declare('knowledge', options);
+export const createRule = (options: { name: string; description?: string }) =>
+  declare('rule', options);
+export const createTemplate = (options: { name: string; description?: string; file?: string }) =>
+  declare('template', options);
+export const createSkill = (options: { name: string; description?: string }) =>
+  declare('skill', options);

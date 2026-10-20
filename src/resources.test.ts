@@ -1,66 +1,72 @@
 import { expect, test } from 'bun:test';
-import { z } from 'zod';
-import { compileAgent } from './compiler';
-import {
-  createAgent,
-  createKnowledge,
-  createRule,
-  createSkill,
-  createTemplate,
-  exactDiff,
-} from './index';
+import { compileAgent, resolveDirectoryResource } from './compiler';
+import { createAgent, createKnowledge, createRule, createSkill, createTemplate } from './index';
 
-test('portable resources are immutable typed definitions in either execution mode', () => {
-  const knowledge = createKnowledge({ name: 'VAT', content: 'Use 20% tax.' });
-  const rule = createRule({ name: 'Accuracy', content: 'Never invent amounts.' });
-  const template = createTemplate({
-    name: 'Summary',
-    content: 'Total: {{total}}',
-    files: { 'template.docx': { encoding: 'base64', content: 'AAH/AA==' } },
+test('directory declarations are tiny, immutable and resolved exclusively from compiler-supplied data', () => {
+  const knowledge = createKnowledge({ name: 'VAT' });
+  expect(Object.isFrozen(knowledge)).toBe(true);
+  expect(knowledge).toEqual({ kind: 'knowledge', name: 'VAT' });
+  const resolved = resolveDirectoryResource(knowledge, {
+    'README.md': 'Use 20% tax.',
+    'rates.csv': 'rate\n0.2',
+  });
+  const rule = resolveDirectoryResource(createRule({ name: 'Accuracy' }), {
+    'RULE.md': 'Never invent amounts.',
+  });
+  const template = resolveDirectoryResource(createTemplate({ name: 'Summary' }), {
+    'template.md': 'Total: {{total}}',
   });
   const agent = createAgent({
     name: 'Invoice',
-    resources: { knowledge, rule, template },
-    outputSchema: z.object({ total: z.number() }),
+    resources: { knowledge: resolved, rule, template },
   });
-  expect(Object.isFrozen(agent.resources?.template.files)).toBe(true);
-  for (const variant of [agent, agent.withFilesystem()]) {
-    expect(compileAgent(variant).resources).toEqual({ knowledge, rule, template });
-  }
-  const evaluated = agent
-    .defineEvaluator('total', exactDiff({ select: (output) => output.total }))
-    .defineEvalPass(({ total }) => total === 1);
-  expect(compileAgent(evaluated).resources?.knowledge.content).toBe('Use 20% tax.');
+  expect(compileAgent(agent).tools?.resource_read).toBeDefined();
+  expect(compileAgent(agent.withFilesystem()).resources).toEqual({
+    knowledge: resolved,
+    rule,
+    template,
+  });
+  expect(() => compileAgent(createAgent({ name: 'Uncaptured', resources: { knowledge } }))).toThrow(
+    'eigenpal agents validate'
+  );
 });
-
-test('skills require an explicit filesystem capability and preserve their asset files', () => {
-  const skill = createSkill({
-    name: 'Check',
-    content: 'Run scripts/check.py',
-    files: { 'scripts/check.py': 'print(1)' },
+test('skills require filesystem but also work in an explicitly empty sandbox', () => {
+  const skill = resolveDirectoryResource(createSkill({ name: 'Check' }), {
+    'SKILL.md': 'Run scripts/check.py',
+    'scripts/check.py': 'print(1)',
   });
-  // @ts-expect-error directory skills do not belong to the portable resource map
+  // @ts-expect-error skills are not portable resources
   expect(() => createAgent({ name: 'Invalid', resources: { skill } })).toThrow('Skills require');
-  const agent = createAgent({ name: 'Invoice' }).withFilesystem({ skills: { check: skill } });
+  const agent = createAgent({ name: 'Empty' }).withFilesystem({
+    cwd: null,
+    skills: { check: skill },
+  });
   expect(compileAgent(agent).resources?.check.files?.['scripts/check.py']).toBe('print(1)');
-  expect(() =>
-    createAgent({ name: 'Empty' }).withFilesystem({ cwd: null, skills: { skill } })
-  ).toThrow('Empty workspaces');
 });
-
-test('resource files and names cannot escape their namespace or overflow compilation', () => {
-  expect(() => createRule({ name: 'Rule', content: 'x', files: { '../escape': 'x' } })).toThrow();
+test('conventions fail clearly and do not accept two authoring interfaces', () => {
+  // @ts-expect-error directory resources never enumerate their content
+  expect(() => createKnowledge({ name: 'x', content: 'x' })).toThrow();
+  expect(() => resolveDirectoryResource(createRule({ name: 'x' }), { 'README.md': 'x' })).toThrow(
+    'RULE.md'
+  );
   expect(() =>
-    createTemplate({
-      name: 'Template',
-      content: 'x',
-      files: { 'file.bin': { encoding: 'base64', content: 'not base64!' } },
+    resolveDirectoryResource(createTemplate({ name: 'x' }), {
+      'template.md': 'x',
+      'template.docx': 'y',
     })
+  ).toThrow('one template');
+  expect(
+    resolveDirectoryResource(createTemplate({ name: 'x', file: 'invoice.md' }), {
+      'invoice.md': '{{total}}',
+    }).entry
+  ).toBe('invoice.md');
+  expect(() =>
+    resolveDirectoryResource(createKnowledge({ name: 'x' }), { 'run.js': 'throw 1' })
+  ).toThrow('supports');
+  expect(() =>
+    resolveDirectoryResource(createTemplate({ name: 'x', file: '../x.md' }), {})
   ).toThrow();
   expect(() =>
-    createAgent({
-      name: 'Invalid',
-      resources: { constructor: createKnowledge({ name: 'x', content: 'x' }) },
-    })
+    createAgent({ name: 'x', resources: { constructor: createKnowledge({ name: 'x' }) } })
   ).toThrow();
 });

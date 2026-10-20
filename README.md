@@ -35,8 +35,8 @@ secret values, or administrative operations.
 ## Explore complete examples
 
 Open [`examples/agents`](examples/agents/README.md) for a standalone IDE project with
-functional and filesystem agents, typed tools, evaluations, and three version-pinned
-shared resource fixtures. Its README includes local setup, type checks and Git installation steps.
+functional and filesystem agents, typed tools, evaluations, and all four directory-backed
+shared resource kinds. Its README includes local setup, type checks and Git installation steps.
 
 ## Compilation boundary
 
@@ -199,13 +199,13 @@ export default invoiceReviewer.withFilesystem({
 The definition and instructions still come from the pinned source snapshot, but
 repository files, manifests and repository environment declarations are not loaded.
 Use `files` for initial content and `packages` for additional installed libraries.
-Portable resource text remains available with `cwd: null`. Resource asset files and skills require repository mode.
+Explicitly attached resources and skills remain available with `cwd: null`.
 Platform tools and run input/output paths remain outside the working directory.
 
 Filesystem options:
 
-- `cwd`: omit it to start in the folder exporting the agent; use a repository-relative existing directory to override it, or `'.'` for the repository root. Set `null` to skip the execution checkout and start with an empty working directory populated only by `files`. An empty string is rejected. String paths must remain inside the checkout after symlink resolution. The option selects initial content/location, not sandbox filesystem permissions.
-- `skills`: optional map of imported `createSkill` definitions. Directory skills and their helper files require repository mode, so `cwd: null` rejects them.
+- `cwd`: omit it to start in the folder exporting the agent; use a repository-relative existing directory to override it, or `'.'` for the repository root. Set `null` to skip the execution checkout and start with a working directory populated by `files` and explicitly attached resources. An empty string is rejected. String paths must remain inside the checkout after symlink resolution. The option selects initial content/location, not sandbox filesystem permissions.
+- `skills`: optional map of imported `createSkill` definitions. Directory skills and their helper files also work with `cwd: null`.
 - `files`: optional map of relative paths to text. At most 100 files and 256 KiB total UTF-8 paths/content. Creates missing directories. Identical existing content is accepted; differing content, symlinks, traversal, absolute paths and managed directories (`.git`, `.eigenpal`, `node_modules`, `eigenpal_modules`) fail before model execution. Binary assets and larger files belong in Git or normal run file inputs. Seed files initialize the workspace; they do not update the Git repository.
 - `packages.python`: optional package-to-exact-version map, such as `{ numpy: '2.3.3' }`. Combined with `requirements.txt` in the selected directory in one `uv` install, so conflicting requirements fail.
 - `packages.npm`: optional package-to-exact-version map, such as `{ 'decimal.js': '10.6.0' }`. Combined with the selected directory's `package.json`; conflicting declared versions fail. Existing `bun.lock` is reused by the current installer. This pins declared direct versions; it does not promise a fully locked transitive environment.
@@ -228,116 +228,127 @@ sandbox provisioning; it never silently downgrades the agent.
 
 ## Shared resources
 
-Define each resource in `resources/<kind>/<slug>/resource.ts`, default export it,
-and import it into the agent. There is no resource YAML declaration or string
-version map. TypeScript catches missing imports and incompatible resource kinds.
-The agent release pins its entire source commit, including imported resources.
-Changing a resource on main never changes an already released agent or resumed run.
+From your agent directory, use `eigenpal agents validate` to capture and validate
+the definition against your configured deployment. In the provided example project, `bun run typecheck` checks
+authoring types locally. The deployment must include directory-resource support.
+The low-level `compileAgent` API does not discover files; it expects already captured
+resources. The public example's `bun run check` verifies its bundled synthetic fixtures
+locally, without credentials, deployment access or model calls.
+
+For a new project, the CLI creates the SDK/Zod/TypeScript dependencies, a strict
+no-emit tsconfig supporting `.ts` imports, and a `typecheck` script. Existing
+project configuration is preserved:
+
+```sh
+eigenpal agents init invoice --template agent
+bun install
+bun run typecheck
+cd agents/invoice
+eigenpal agents validate
+```
+
+A resource is a directory with a default-exported `resource.ts`. Import the definition;
+EigenPal captures its accompanying files from the same Git commit as the agent.
+No asset imports, `content`, `files` maps, YAML manifests or dependency-version strings.
 
 ```ts
 // resources/knowledge/tax-policy/resource.ts
 import { createKnowledge } from '@eigenpal/automations';
-export default createKnowledge({ name: 'Tax policy', content: 'Apply 20% tax.' });
+export default createKnowledge({ name: 'Tax policy' });
+// Add README.md, rates.csv, guidance.pdf, or nested document folders beside it.
 
 // resources/rules/invoice-style/resource.ts
 import { createRule } from '@eigenpal/automations';
-export default createRule({
-  name: 'Invoice style',
-  content: 'Round amounts to two decimal places.',
-});
+export default createRule({ name: 'Invoice style' });
+// Put instructions in RULE.md beside it.
 
-// resources/templates/summary/resource.ts
+// resources/templates/invoice/resource.ts
 import { createTemplate } from '@eigenpal/automations';
-export default createTemplate({ name: 'Summary', content: 'Invoice total: {{total}}' });
+export default createTemplate({ name: 'Invoice' });
+// Put template.docx, template.xlsx or template.md beside it, exactly one.
+
+// resources/skills/invoice-checks/resource.ts
+import { createSkill } from '@eigenpal/automations';
+export default createSkill({ name: 'Invoice checks' });
+// Keep SKILL.md and scripts/, references/, or other helper files beside it.
 ```
 
-All three work in ordinary agents:
+All factories accept `name` and optional `description`. Templates additionally accept
+`file`, such as `createTemplate({ name: 'Invoice', file: 'invoice.docx' })`, when the
+entry uses another filename. It must remain inside the resource directory. Ambiguous
+or missing entries fail validation. Markdown templates use `{{field}}` and nested
+`{{customer.name}}` variables; Liquid control tags are unsupported. DOCX/XLSX use the
+platform Office template syntax:
+
+- DOCX scalar: `Supplier: {supplier}`.
+- DOCX loop: `{#items}{name}: {amount}{/items}` with `items: [{ name, amount }]`.
+- DOCX conditional: `{#approved}Approved{/approved}` with a boolean value.
+- XLSX scalar: `{supplier}` in a cell.
+- XLSX table: `{table:items.name}` and `{table:items.amount}` in adjacent cells.
+
+Office placeholders use single braces. Raw XML insertion and XLSX image placeholders are unsupported by resource
+tools. Template expansion, extracted text and artifact bytes are bounded before output
+registration; generated files never overwrite source templates.
 
 ```ts
+// agents/invoice/agent.ts
 import { createAgent } from '@eigenpal/automations';
 import policy from '../../resources/knowledge/tax-policy/resource.ts';
 import style from '../../resources/rules/invoice-style/resource.ts';
-import summary from '../../resources/templates/summary/resource.ts';
+import invoice from '../../resources/templates/invoice/resource.ts';
 
 export default createAgent({
   name: 'Invoice reviewer',
-  instructions: 'Review the invoice using the supplied policy, rules and summary template.',
-  resources: { policy, style, summary },
+  instructions: 'Check the invoice using the tax policy and fill its summary.',
+  resources: { policy, style, invoice },
 });
 ```
 
-Knowledge supplies reference text; rules supply instructions; templates supply text
-to render into the answer. Both runtimes use the same compiled text. An ordinary
-agent can return template text or structured values, but filling a binary DOCX or
-XLSX requires filesystem tools. Binary bytes never enter the model prompt.
+Rules enter the instructions directly. Knowledge and templates add a small catalog
+and built-in tools, rather than flooding model context with document text:
 
-Every factory accepts `name` (required), `description` (optional), `content`
-(required nonblank text), and `files` (optional supporting assets). Content may be
-inline or imported with `with { type: 'text' }`. Supporting file values are strings,
-byte imports using `with { type: 'bytes' }`, or `{ content, executable: true }` for
-a runnable helper. An explicit `{ encoding: 'base64', content }` representation is
-also accepted. Preserve relative asset paths inside a resource; traversal,
-absolute paths, symlinks and managed directories are rejected.
+- `resource_list({ resource })` lists captured file paths for any attached resource.
+- `resource_search({ resource, query })` performs case-insensitive literal search,
+  returning up to ten excerpts with paths and character offsets. No vector service is required.
+- `resource_read({ resource, path, offset?, limit? })` reads extracted text (or registers a downloadable artifact for a binary companion file), up to
+  12,000 characters per call, and returns `nextOffset` for paging.
+- `template_inspect({ resource })` discovers template placeholders.
+- `template_fill({ resource, data, filename? })` fills the captured template and
+  registers a downloadable run artifact, returning its `fileId` and `name`.
+
+`resource` is the imported alias (`policy` or `invoice` above). Tool schemas enumerate
+only attached aliases. Browse tools also expose rule/template companion files. Built-in names are reserved so custom tools cannot shadow them.
+Knowledge supports Markdown, UTF-8 text, CSV, JSON, PDF, DOCX and XLSX. PDF access
+uses the deployment's existing bounded text extractor; scanned PDFs need a text layer.
+Document contents are untrusted reference data, not additional agent instructions.
+Missing template values, unsupported formats and oversized outputs fail explicitly.
+
+Filesystem agents gain the same tools and receive the original resource directories:
 
 ```ts
-// resources/skills/invoice-checks/resource.ts
-import { createSkill } from '@eigenpal/automations';
-import content from './SKILL.md' with { type: 'text' };
-import helper from './scripts/check.py' with { type: 'text' };
-export default createSkill({
-  name: 'Invoice checks',
-  description: 'Check invoice arithmetic.',
-  content,
-  files: { 'scripts/check.py': helper },
-});
-
-// agents/invoice/agent.ts
 import checks from '../../resources/skills/invoice-checks/resource.ts';
-// Add filesystem before defining evaluators:
+// Extend the agent configuration before registering evaluators:
 // createAgent({ ... }).withFilesystem({ skills: { checks } });
 ```
 
-Skills remain directory skills, including `SKILL.md` and arbitrary helper files;
-they cannot be passed to ordinary `resources`. In repository mode assets are
-installed below `/workspace/agent/.eigenpal-resources/<alias>/`, and the agent
-receives that location. Skill helper paths stay relative to the skill directory.
-`cwd` changes the initial working directory; it does not relocate resource assets.
-Seed `files` are relative to `cwd`. Differing files never silently overwrite each
-other. With `cwd: null`, only seed files populate the empty workspace; portable
-resource text still reaches the agent, and resource assets are not installed.
+Files are installed under `/workspace/agent/.eigenpal-resources/<alias>/`. Skills
+include `SKILL.md` and their helpers; helper code is data until explicitly executed
+inside the filesystem sandbox. Ordinary agents cannot attach directory skills. Filesystem agents receive a skill catalog and the path to SKILL.md, then read instructions/helpers as needed. Scripts do not run automatically.
+`cwd: null` skips the repository checkout but still installs explicitly attached
+resources and skills, alongside seed files. Changing `cwd` does not relocate resources.
+Conflicting files and symlinks fail instead of being overwritten.
 
-For binary templates, provide a meaningful text representation plus the original
-asset, for example `createTemplate({ name: 'Invoice', content: 'Fill total and tax.',
-files: { 'invoice.docx': documentBytes } })`. A filesystem agent gets both; a normal
-agent gets the text contract. Installing a skill or template never executes its
-files during compilation; only the bounded definition module is evaluated.
+Capture recursively excludes hidden files/directories, dependency folders,
+`resource.ts`, package manifests/locks and private-key file extensions. It preserves
+asset bytes and executable flags. Unsupported knowledge files fail validation.
+The existing compiler limits apply: 128 captured files, 2 MiB source and bounded
+compiled resource data. Large knowledge collections belong outside this Git snapshot.
 
-Limits: 32 resources per agent, 64 supporting files per resource, 128 KiB primary
-text, 256 KiB per text file, 512 KiB encoded per binary file, and 1 MiB combined
-resource data. The captured definition/import graph is limited to 128 files and
-2 MiB. Only SDK, Zod, local agent modules and project `resources/` imports are
-available to the compiler. Host packages, credentials and arbitrary filesystem
-reads remain unavailable. Explicit imported assets can have any safe filename.
-
-For IDE support, declare asset modules in a project `assets.d.ts`:
-
-```ts
-declare module '*.md' {
-  const content: string;
-  export default content;
-}
-declare module '*.py' {
-  const content: string;
-  export default content;
-}
-declare module '*.docx' {
-  const content: Uint8Array;
-  export default content;
-}
-```
-
-The [complete examples](examples/agents) include every resource kind, a binary
-template, skill helpers, both runtime modes, and negative TypeScript checks.
+Capture is performed by trusted source readers. Factories never read the host disk.
+The compiled snapshot includes all captured data; historical runs/resumes do not
+consult a newer resource directory. Resource edits require a new agent release.
+SDK callbacks still run in bounded QuickJS without host filesystem/network access;
+the browse/fill tools are fixed platform operations, not authored host callbacks.
 
 ## Run, edit and resume
 

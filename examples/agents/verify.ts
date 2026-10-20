@@ -1,4 +1,32 @@
-import { compileAgent } from '@eigenpal/automations/compiler';
+import type { ResourceDefinition, ResourceFile } from '@eigenpal/automations';
+import { compileAgent, resolveDirectoryResource } from '@eigenpal/automations/compiler';
+import { Glob } from 'bun';
+
+// Verification harness only: the deployment compiler performs directory capture for real runs.
+const resolved = new Map<string, ResourceDefinition>();
+const resourceDirectories = {
+  policy: 'resources/knowledge/tax-policy/',
+  style: 'resources/rules/invoice-style/',
+  summary: 'resources/templates/invoice-summary/',
+  checks: 'resources/skills/invoice-checks/',
+};
+for (const [alias, directory] of Object.entries(resourceDirectories)) {
+  const path = directory + 'resource.ts';
+  const declaration = (await import('./' + path)).default;
+  const files: Record<string, ResourceFile> = {};
+  for await (const name of new Glob('**/*').scan({
+    cwd: import.meta.dir + '/' + directory,
+    onlyFiles: true,
+  })) {
+    if (name === 'resource.ts') continue;
+    const file = Bun.file(import.meta.dir + '/' + directory + name);
+    files[name] = /\.(md|txt|csv|json|py|js|ts)$/.test(name)
+      ? await file.text()
+      : { encoding: 'base64', content: Buffer.from(await file.arrayBuffer()).toString('base64') };
+  }
+  resolved.set(alias, resolveDirectoryResource(declaration, files));
+}
+
 import empty from './agents/invoice/variants/empty.ts';
 import evaluated, { customPass } from './agents/invoice/variants/evaluated.ts';
 import functional from './agents/invoice/variants/functional.ts';
@@ -6,7 +34,13 @@ import projectRoot from './agents/invoice/variants/project-root.ts';
 import repository from './agents/invoice/variants/repository.ts';
 
 const definitions = [functional, repository, projectRoot, empty, evaluated, customPass].map(
-  (definition) => compileAgent(definition)
+  (definition) =>
+    compileAgent({
+      ...definition,
+      resources: Object.fromEntries(
+        Object.keys(definition.resources ?? {}).map((alias) => [alias, resolved.get(alias)!])
+      ),
+    })
 );
 function check(condition: boolean, message: string): void {
   if (!condition) throw new Error(message);

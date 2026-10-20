@@ -22,7 +22,7 @@ Node.js 22+ and Bun are required. The example depends on `file:../..` so it uses
 - `agents/invoice/variants/functional.ts`: no sandbox, inline instructions, Zod input/output, imported custom tool, API trigger, turn/time/model-credit guards.
 - `agents/invoice/variants/repository.ts`: `.withFilesystem()` uses the agent package folder and `AGENT.md`; local invoice/template files plus imported knowledge, rules, template and directory skill.
 - `agents/invoice/variants/project-root.ts`: override `cwd`, seed a file, declare exact npm/Python sandbox library versions.
-- `agents/invoice/variants/empty.ts`: `cwd: null` starts with only seeded files and no repository checkout.
+- `agents/invoice/variants/empty.ts`: `cwd: null` starts with seeded files, any explicitly attached resources and no repository checkout.
 - `agents/invoice/variants/evaluated.ts`: typed exact comparison, LLM judge, custom evaluator, weighted decision and an alternative boolean callback. Evaluations work with or without filesystem access. Configure filesystem before registering evaluators.
 - `type-checks.ts`: intentional mistakes marked `@ts-expect-error`. Remove a comment to inspect the diagnostic.
 
@@ -39,11 +39,11 @@ for Studio's draft configuration editing.
 
 ## Shared resources
 
-Each resource is defined and default exported by `resource.ts`. Open:
+Each resource is defined and default exported by `resource.ts`. Factories take a name and optional description; accompanying files are captured automatically. Open:
 
 - `resources/knowledge/tax-policy/resource.ts`: imported policy text, usable by either agent mode.
 - `resources/rules/invoice-style/resource.ts`: reusable instructions, usable by either mode.
-- `resources/templates/invoice-summary/resource.ts`: a text contract plus the original DOCX bytes. Ordinary agents use the text; filesystem agents can fill the document.
+- `resources/templates/invoice-summary/resource.ts`: a conventional `template.docx`. Both modes can inspect/fill it through built-in tools; filesystem agents also receive the file.
 - `resources/skills/invoice-checks/resource.ts`: `SKILL.md`, a Python helper and a binary fixture. Skills require `.withFilesystem({ skills: { checks } })`.
 
 Use `resources: { policy, style, summary }` on `createAgent`, then optionally
@@ -53,11 +53,10 @@ version map. A resource edit needs a new agent release to affect production.
 
 Skill files remain a directory. The sandbox installs them under
 `/workspace/agent/.eigenpal-resources/checks/`; helpers are relative to that folder.
-Knowledge, rules and template text are compiled into both modes' instructions.
+Rules enter instructions. Every attached resource gets list/search/read tools, including rule/template companion files. Templates also get inspect/fill tools in both modes.
 Binary bytes never enter the prompt. `cwd` changes the initial work location,
 while resource assets retain their explicit namespace. Seed `files` are relative
-to cwd and differing existing files cause an error. `cwd: null` starts with only
-seed files, retains portable resource text and rejects skills.
+to cwd and differing existing files cause an error. `cwd: null` skips the repository checkout; explicitly attached resources and skills remain available alongside seed files.
 
 TypeScript tools in `agents/invoice/shared/` are ordinary code imports.
 Their synchronous callbacks run in the bounded isolated script runtime, without

@@ -13,7 +13,7 @@ import {
   validateEvaluatorName,
   validateWeightedPass,
 } from './evaluation.js';
-import { resourceMapSchema } from './resources.js';
+import { resourceDeclarationMapSchema as resourceMapSchema } from './resources.js';
 
 export type {
   AgentConfig,
@@ -113,8 +113,6 @@ export function createAgent<
                   throw new Error('Use resources for knowledge, rules and templates');
                 if (Object.keys(parsedSkills).some((name) => Object.hasOwn(portable, name)))
                   throw new Error('Duplicate resource name');
-                if (workspace.cwd === null && Object.keys(parsedSkills).length)
-                  throw new Error('Empty workspaces cannot install skills');
                 const { workspace: _previous, ...base } = config;
                 return build(
                   {
@@ -157,7 +155,9 @@ export type {
 export { createKnowledge, createRule, createSkill, createTemplate } from './resources.js';
 export type {
   BinaryAsset,
+  DirectoryResource,
   PortableResource,
+  ResourceDeclaration,
   ResourceDefinition,
   ResourceFile,
   Skill,
