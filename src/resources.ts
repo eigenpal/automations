@@ -120,11 +120,15 @@ function declare<K extends ResourceKind>(
   ).parse(options);
   return Object.freeze({ ...parsed, kind });
 }
+/** Default-export from resource.ts; captures supported documents recursively from this directory at release. */
 export const createKnowledge = (options: { name: string; description?: string }) =>
   declare('knowledge', options);
+/** Default-export from resource.ts beside RULE.md, which enters the agent instructions. */
 export const createRule = (options: { name: string; description?: string }) =>
   declare('rule', options);
+/** Default-export from resource.ts beside one template.docx, template.xlsx or template.md; file overrides that convention. */
 export const createTemplate = (options: { name: string; description?: string; file?: string }) =>
   declare('template', options);
+/** Default-export from resource.ts beside SKILL.md and helpers. Attach through withFilesystem({ skills }). */
 export const createSkill = (options: { name: string; description?: string }) =>
   declare('skill', options);

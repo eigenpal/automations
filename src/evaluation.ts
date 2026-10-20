@@ -1,9 +1,7 @@
 import { z } from 'zod';
-export type DeepReadonly<T> = T extends readonly (infer U)[]
-  ? readonly DeepReadonly<U>[]
-  : T extends object
-    ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
-    : T;
+export type DeepReadonly<T> = T extends object
+  ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
+  : T;
 export type JsonProjection =
   | string
   | number
@@ -48,8 +46,8 @@ export type SelectedDiffOptions<P> = Omit<
   unorderedPaths?: ProjectionPath<P>[];
 };
 /** Stored expected answers may be partial; they are never exposed to the agent. */
-export type DeepPartial<T> = T extends readonly (infer U)[]
-  ? DeepPartial<U>[]
+export type DeepPartial<T> = T extends readonly unknown[]
+  ? { [K in keyof T]: DeepPartial<T[K]> }
   : T extends object
     ? { [K in keyof T]?: DeepPartial<T[K]> }
     : T;

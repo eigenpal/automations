@@ -1,7 +1,13 @@
 import { z } from 'zod';
+import { assertSynchronousTool } from './capabilities.js';
 import { agentConfigSchema } from './config.js';
 import type { AgentCore, CompiledAgent, DefinitionSchema, JsonSchema } from './definition.js';
-import { normalizeEvaluator, validateEvaluatorName, validateWeightedPass } from './evaluation.js';
+import {
+  normalizeEvaluator,
+  validateEvaluatorName,
+  validateWeightedPass,
+  type AgentEvaluation,
+} from './evaluation.js';
 import { copyJsonSchema } from './json-schema.js';
 import { RESOURCE_TOOL_NAMES, resourceTools } from './resource-tools.js';
 import { resourceMapSchema } from './resources.js';
@@ -49,11 +55,16 @@ export function compileSchema(schema: DefinitionSchema, field: string): JsonSche
   }
 }
 
+// The compiler inspects callback descriptors but never invokes callbacks. Erasing
+// their input types here allows heterogeneous agent collections without weakening
+// schema types or accepting unfinished evaluator chains.
+type CompilableAgent = Omit<AgentCore, 'evaluation'> & {
+  readonly evaluation?: AgentEvaluation<never, never>;
+  readonly defineEvalPass?: never;
+};
+
 /** Accepts an already loaded definition. Loading/executing tenant TS is a separate boundary. */
-export function compileAgent<
-  I extends DefinitionSchema | undefined,
-  O extends DefinitionSchema | undefined,
->(definition: AgentCore<I, O> & { readonly defineEvalPass?: never }): CompiledAgent {
+export function compileAgent(definition: CompilableAgent): CompiledAgent {
   if (definition.kind !== 'agent') throw new Error('compileAgent expects an agent definition');
   if (definition.config.workspace !== undefined && definition.config.filesystem !== true)
     throw new Error('workspace requires filesystem capability');
@@ -92,9 +103,14 @@ export function compileAgent<
           'write_workflow_output_file',
         ].includes(name)
       )
-        throw new Error('Invalid tool name');
+        throw new Error(
+          `Invalid tool name tools.${name}: use a letter followed by up to 63 letters, digits or underscores; built-in names are reserved`
+        );
       if (!tool.description?.trim() || typeof tool.execute !== 'function')
-        throw new Error('Invalid tool definition');
+        throw new Error(
+          `Invalid tool definition tools.${name}: provide a description and synchronous execute callback`
+        );
+      assertSynchronousTool(tool.execute, `tools.${name}.execute`);
       return [
         name,
         {

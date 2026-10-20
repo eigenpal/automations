@@ -140,3 +140,49 @@ export function authoringTypeContracts() {
     })
   );
 }
+
+export function tupleInferenceContract() {
+  createAgent({
+    name: 'Tuple output',
+    outputSchema: z.object({ pair: z.tuple([z.string(), z.number()]) }),
+  })
+    .defineEvaluator('tuple', ({ actual, expected }) => {
+      const label: string = actual.pair[0];
+      const amount: number = actual.pair[1];
+      const expectedLabel: string | undefined = expected?.pair?.[0];
+      const expectedAmount: number | undefined = expected?.pair?.[1];
+      // @ts-expect-error actual remains deeply readonly, including tuple slots
+      actual.pair[0] = 'changed';
+      // @ts-expect-error tuple index zero is a string, not a number
+      const wrong: number = actual.pair[0];
+      void expectedLabel;
+      void expectedAmount;
+      void wrong;
+      return label.length > 0 && amount > 0 ? 1 : 0;
+    })
+    .defineEvaluator(
+      'projection',
+      llmJudge({
+        prompt: 'Check the pair',
+        select: ({ actual }) => {
+          const label: string = actual.pair[0];
+          const amount: number = actual.pair[1];
+          return { label, amount };
+        },
+      })
+    )
+    .defineEvalPass(({ tuple, projection }) => tuple === 1 && projection >= 0.5);
+}
+
+export function heterogeneousCompilationContract() {
+  const left = createAgent({ name: 'Left', outputSchema: z.object({ text: z.string() }) });
+  const right = createAgent({ name: 'Right', outputSchema: z.object({ amount: z.number() }) })
+    .defineEvaluator('positive', ({ actual }) => (actual.amount > 0 ? 1 : 0))
+    .defineEvalPass(({ positive }) => positive === 1);
+  [left, right].map(compileAgent);
+  [left, right].map((agent) => compileAgent(agent));
+  // @ts-expect-error schema constraints must still hold at the erased compilation boundary
+  compileAgent({ ...left, outputSchema: 42 });
+  // @ts-expect-error an unfinished evaluation chain stays un-compilable in collections
+  [left.defineEvaluator('text', ({ actual }) => (actual.text ? 1 : 0)), right].map(compileAgent);
+}

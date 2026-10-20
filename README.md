@@ -204,7 +204,7 @@ Platform tools and run input/output paths remain outside the working directory.
 
 Filesystem options:
 
-- `cwd`: omit it to start in the folder exporting the agent; use a repository-relative existing directory to override it, or `'.'` for the repository root. Set `null` to skip the execution checkout and start with a working directory populated by `files` and explicitly attached resources. An empty string is rejected. String paths must remain inside the checkout after symlink resolution. The option selects initial content/location, not sandbox filesystem permissions.
+- `cwd`: omit it to start in the folder exporting the agent; use a repository-relative existing directory to override it, or `'.'` for the repository root. Set `null` to skip the execution checkout and start with a working directory populated by `files` and explicitly attached resources. An empty string is rejected. Paths use ASCII letters, digits, `_`, `.`, `-` and `/` only; spaces and Unicode names are not supported in workspace paths. String paths must remain inside the checkout after symlink resolution. The option selects initial content/location, not sandbox filesystem permissions.
 - `skills`: optional map of imported `createSkill` definitions. Directory skills and their helper files also work with `cwd: null`.
 - `files`: optional map of relative paths to text. At most 100 files and 256 KiB total UTF-8 paths/content. Creates missing directories. Identical existing content is accepted; differing content, symlinks, traversal, absolute paths and managed directories (`.git`, `.eigenpal`, `node_modules`, `eigenpal_modules`) fail before model execution. Binary assets and larger files belong in Git or normal run file inputs. Seed files initialize the workspace; they do not update the Git repository.
 - `packages.python`: optional package-to-exact-version map, such as `{ numpy: '2.3.3' }`. Combined with `requirements.txt` in the selected directory in one `uv` install, so conflicting requirements fail.
@@ -339,7 +339,7 @@ resources and skills, alongside seed files. Changing `cwd` does not relocate res
 Conflicting files and symlinks fail instead of being overwritten.
 
 Capture recursively excludes hidden files/directories, dependency folders,
-`resource.ts`, package manifests/locks and private-key file extensions. It preserves
+`resource.ts`, package manifests/locks and private-key file extensions. The filename `resource.ts` and its default export are required; directory names and imported aliases are your choice. It preserves
 asset bytes and executable flags. Unsupported knowledge files fail validation.
 The existing compiler limits apply: 128 captured files, 2 MiB source and bounded
 compiled resource data. Large knowledge collections belong outside this Git snapshot.

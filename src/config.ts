@@ -8,12 +8,20 @@ export const filesystemOptionsSchema = z
       .max(512)
       .refine(
         (value) => value === '.' || safePath(value),
-        'Use a repository-relative directory without traversal'
+        'Use a repository-relative directory containing only ASCII letters, digits, _, ., - and /, without traversal'
       )
       .nullable()
       .optional(),
     files: z
-      .record(z.string().refine(safePath, 'Use a safe relative file path'), z.string())
+      .record(
+        z
+          .string()
+          .refine(
+            safePath,
+            'Use a relative file path containing only ASCII letters, digits, _, ., - and /, without traversal'
+          ),
+        z.string()
+      )
       .optional(),
     packages: z
       .strictObject({

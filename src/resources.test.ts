@@ -70,3 +70,16 @@ test('conventions fail clearly and do not accept two authoring interfaces', () =
     createAgent({ name: 'x', resources: { constructor: createKnowledge({ name: 'x' }) } })
   ).toThrow();
 });
+
+test('blank optional descriptions do not make directory resources unresolvable', () => {
+  for (const description of ['', '   ']) {
+    const template = resolveDirectoryResource(createTemplate({ name: 'Summary', description }), {
+      'template.md': '{{total}}',
+    });
+    const knowledge = resolveDirectoryResource(createKnowledge({ name: 'Policy', description }), {
+      'policy.md': 'Approved policy',
+    });
+    expect(template.content).toContain('template.md');
+    expect(knowledge.content).toContain('knowledge');
+  }
+});

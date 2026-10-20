@@ -48,7 +48,7 @@ export interface AgentEmailAlias {
 
 /** Additive sandbox capability. Paths are relative; package versions must be exact. */
 export interface FilesystemOptions {
-  /** Defaults to the agent package folder. A path selects a project directory; null starts empty. */
+  /** Omit for the agent folder; use a repo-relative path to override, or null for no checkout. Paths use ASCII letters, digits, _, ., - and / only; no traversal. */
   cwd?: string | null;
   /** Directory skills require the filesystem capability. */
   skills?: Record<string, Skill>;
@@ -77,9 +77,13 @@ export interface AgentOptions<I = DefinitionSchema, O = DefinitionSchema> extend
   AgentConfig,
   'filesystem' | 'workspace'
 > {
+  /** Zod 4 or raw JSON object schema for run input. Zod infers types; raw schemas infer unknown. No transforms or defaults. */
   inputSchema?: I;
+  /** Zod 4 or raw JSON object schema for the final answer. Zod infers evaluator/selector arguments; raw schemas infer unknown. */
   outputSchema?: O;
+  /** Import default-exported resource.ts declarations. Keys are local aliases in resource tools and sandbox paths. Files are captured at release, not read by this factory. */
   resources?: Record<string, PortableResource>;
+  /** Model-facing names mapped to createTool definitions. Up to 16; built-in names such as read, bash and resource_read are reserved. */
   tools?: Record<string, ToolDefinition<never, unknown>>;
 }
 
@@ -102,7 +106,9 @@ export interface AgentDefinition<
   I = DefinitionSchema | undefined,
   O = DefinitionSchema | undefined,
 > extends AgentCore<I, O> {
+  /** Opt into a sandbox. Replaces previous filesystem settings; configure before defining evaluators. */
   withFilesystem(options?: FilesystemOptions): AgentDefinition<I, O>;
+  /** Register a named score from 0 to 1. Closes agent configuration; output types flow into the callback/selector. */
   defineEvaluator<const N extends string>(
     name: N & EvaluatorName<N>,
     evaluate: EvaluatorInput<InferSchema<O>>
@@ -110,10 +116,12 @@ export interface AgentDefinition<
 }
 /** Evaluation registration closes configuration; pass closes evaluation registration. */
 export interface AgentEvaluators<I, O, S extends Record<string, number>> extends AgentCore<I, O> {
+  /** Register a named score from 0 to 1. Closes agent configuration; output types flow into the callback/selector. */
   defineEvaluator<const N extends string>(
     name: N & EvaluatorName<N> & (N extends keyof S ? never : N),
     evaluate: EvaluatorInput<InferSchema<O>>
   ): AgentEvaluators<I, O, S & Record<N, number>>;
+  /** Finish evaluation registration with one typed predicate or weightedScore decision. No further configuration follows. */
   defineEvalPass<const W extends Record<string, number>>(
     pass:
       | ((scores: Readonly<S>) => boolean)

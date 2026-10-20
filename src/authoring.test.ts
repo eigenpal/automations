@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { z } from 'zod';
 import { compileAgent } from './compiler';
-import { createAgent } from './index';
+import { createAgent, createTool } from './index';
 
 describe('standalone authoring contract', () => {
   test('compiles an agent without platform libraries', () => {
@@ -49,4 +49,17 @@ describe('standalone authoring contract', () => {
       )
     ).toThrow('inputSchema:');
   });
+});
+
+test('async tools fail during authoring or compilation even with raw JSON schemas', () => {
+  const options = {
+    description: 'Unsupported async tool',
+    inputSchema: { type: 'object' },
+    outputSchema: { type: 'object' },
+    execute: async () => ({ ok: true }),
+  };
+  expect(() => createTool(options)).toThrow('synchronous');
+  expect(() =>
+    compileAgent(createAgent({ name: 'Raw tool', tools: { invalid: options } }))
+  ).toThrow('synchronous');
 });
