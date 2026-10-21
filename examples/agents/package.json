@@ -1,0 +1,16 @@
+{
+  "name": "eigenpal-agent-examples",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "check": "bun verify.ts"
+  },
+  "dependencies": {
+    "@eigenpal/automations": "file:../..",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  }
+}

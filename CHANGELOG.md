@@ -1,5 +1,13 @@
 # @eigenpal/automations
 
+## 0.20.71
+
+### Minor Changes
+
+- 28d79f3: Define agents with inline or file instructions, immutable .withFilesystem() variants with bounded seed files and exact sandbox packages, custom typed tools, working directories, and composable execution guards.
+
+  Define knowledge, rules, templates and directory skills as imported TypeScript resources. Portable resource text works in both agent modes; skills require filesystem access. Capture resources at the agent release commit instead of maintaining unchecked version strings.
+
 ## 0.20.49
 
 ### Patch Changes
