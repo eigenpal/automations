@@ -1,7 +1,7 @@
 import { exactDiff, llmJudge, weightedScore } from '@eigenpal/automations';
 import invoice from './functional.ts';
 
-// Reuse an agent without mutating it. Add .withFilesystem() before evaluators if needed.
+// Reuse an agent without mutating it. Filesystem capabilities can be added before or after evaluation configuration.
 const evaluated = invoice
   .defineEvaluator(
     'amounts',
@@ -19,7 +19,7 @@ const evaluated = invoice
   )
   .defineEvaluator('positive', ({ actual }) => (actual.total >= 0 ? 1 : 0));
 
-export default evaluated.defineEvalPass(
+const weighted = evaluated.defineEvalPass(
   weightedScore({
     weights: { amounts: 3, meaning: 1, positive: 1 },
     threshold: 0.9,
@@ -30,3 +30,8 @@ export default evaluated.defineEvalPass(
 export const customPass = evaluated.defineEvalPass(
   ({ amounts, meaning, positive }) => positive === 1 && (amounts === 1 || meaning >= 0.95)
 );
+
+export default weighted;
+
+// Reuse all output types, evaluators and the weighted pass rule in a sandbox.
+export const filesystemEvaluated = weighted.withFilesystem({ cwd: null });

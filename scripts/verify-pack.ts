@@ -69,8 +69,12 @@ compileAgent(evaluated.defineEvalPass(weightedScore({weights:{fields:2,judge:1},
 createAgent({name:'Bad',outputSchema:z.object({total:z.number()})}).defineEvaluator('judge',llmJudge({prompt:'Check the summary facts.',select:({actual})=>actual.typo}));
 // @ts-expect-error score names are exact
  evaluated.defineEvalPass(weightedScore({weights:{typo:1},threshold:.8}));
-// @ts-expect-error pass is terminal
- evaluated.defineEvalPass(scores=>scores.fields===1).withFilesystem();
+const completed=evaluated.defineEvalPass(scores=>scores.fields===1).withFilesystem({cwd:null});
+compileAgent(completed);
+// @ts-expect-error filesystem composition must not reopen evaluator registration
+completed.defineEvaluator('extra',()=>1);
+// @ts-expect-error filesystem composition must not reopen pass registration
+completed.defineEvalPass(()=>true);
 
 `
   );
@@ -105,6 +109,15 @@ createAgent({name:'Bad',outputSchema:z.object({total:z.number()})}).defineEvalua
     const compiled = compileAgent(createAgent({ name: 'Consumer' }));
     assert.deepEqual(compiled.manifest, { schemaVersion: 1, name: 'Consumer', filesystem: false });
     assert.equal('maxCostUsd' in sdk,false);
+    const reviewed=createAgent({name:'Reviewed',outputSchema:z.object({total:z.number()})})
+      .defineEvaluator('valid',({actual})=>Number(actual.total>=0))
+      .defineEvalPass(({valid})=>valid===1);
+    const filesystem=reviewed.withFilesystem({cwd:null});
+    assert.equal(compileAgent(reviewed).manifest.filesystem,false);
+    assert.equal(compileAgent(filesystem).manifest.filesystem,true);
+    assert.deepEqual(compileAgent(filesystem).evaluation,compileAgent(reviewed).evaluation);
+    assert.equal('defineEvaluator' in filesystem,false);
+    assert.equal('defineEvalPass' in filesystem,false);
     const typed=compileAgent(createAgent({name:'Typed',guards:[maxCredits(20)],tools:{total:createTool({description:'Total',inputSchema:z.object({subtotal:z.number()}),outputSchema:z.object({total:z.number()}),execute:({subtotal})=>({total:subtotal*1.2})})}}));
     assert.equal(typed.tools.total.outputSchema.properties.total.type,'number');
     assert.deepEqual(typed.manifest.guards,[{kind:'credits',value:20}]);

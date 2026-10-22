@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { assertSynchronousTool } from './capabilities.js';
 export type DeepReadonly<T> = T extends object
   ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
   : T;
@@ -167,6 +168,7 @@ export function exactDiff<T, const P extends JsonProjection>(options: {
   options?: SelectedDiffOptions<P>;
 }): ExactDiffEvaluator<T> {
   if (typeof options.select !== 'function') throw new Error('exactDiff requires select');
+  assertSynchronousTool(options.select, 'exactDiff.select');
   return Object.freeze({
     kind: 'exact-diff',
     select: options.select,
@@ -188,6 +190,7 @@ export function llmJudge<T>(options: {
   )
     throw new Error('llmJudge requires a prompt between 10 and 131072 characters');
   if (typeof options.select !== 'function') throw new Error('llmJudge requires select');
+  assertSynchronousTool(options.select, 'llmJudge.select');
   if (options.model !== undefined && !options.model.trim())
     throw new Error('llmJudge model cannot be empty');
   return Object.freeze({ kind: 'llm-judge', ...options });
@@ -244,15 +247,20 @@ export function validateEvaluatorName(name: string): void {
     throw new Error('Invalid evaluator name');
 }
 export function normalizeEvaluator<T>(input: EvaluatorInput<T>): Evaluator<T> {
-  if (typeof input === 'function') return Object.freeze({ kind: 'custom', evaluate: input });
+  if (typeof input === 'function') {
+    assertSynchronousTool(input, 'evaluator.evaluate');
+    return Object.freeze({ kind: 'custom', evaluate: input });
+  }
   if (!input || typeof input !== 'object') throw new Error('Invalid evaluator');
   switch (input.kind) {
     case 'custom':
       if (typeof input.evaluate !== 'function')
         throw new Error('Custom evaluator requires a callback');
+      assertSynchronousTool(input.evaluate, 'evaluator.evaluate');
       return Object.freeze({ kind: 'custom', evaluate: input.evaluate });
     case 'exact-diff':
       if (typeof input.select !== 'function') throw new Error('exactDiff requires select');
+      assertSynchronousTool(input.select, 'exactDiff.select');
       return Object.freeze({
         kind: 'exact-diff',
         select: input.select,

@@ -1,3 +1,4 @@
+import { assertSynchronousTool } from './capabilities.js';
 import { agentConfigSchema, filesystemOptionsSchema } from './config.js';
 import type {
   AgentConfig,
@@ -75,6 +76,8 @@ export function createAgent<
         typeof (descriptor as { evaluate?: unknown }).evaluate !== 'function'
       )
         throw new Error('Invalid evaluation pass');
+      if (descriptor.kind === 'callback')
+        assertSynchronousTool((descriptor as { evaluate: unknown }).evaluate, 'evaluation.pass');
       return build(config, evaluators, freezeEvaluationData({ ...descriptor }), attached);
     };
     const freeze = <T>(value: T): T => {
@@ -99,33 +102,31 @@ export function createAgent<
             }),
           }
         : {}),
+      withFilesystem(options: FilesystemOptions = {}) {
+        const { skills, ...settings } = options;
+        const workspace = filesystemOptionsSchema.parse(settings);
+        const parsedSkills = resourceMapSchema.parse(skills ?? {});
+        if (Object.values(parsedSkills).some((resource) => resource.kind !== 'skill'))
+          throw new Error('Use resources for knowledge, rules and templates');
+        if (Object.keys(parsedSkills).some((name) => Object.hasOwn(portable, name)))
+          throw new Error('Duplicate resource name');
+        const { workspace: _previous, ...base } = config;
+        return build(
+          {
+            ...base,
+            filesystem: true,
+            ...(Object.keys(workspace).length ? { workspace } : {}),
+          },
+          evaluators,
+          pass,
+          { ...portable, ...parsedSkills }
+        );
+      },
       ...(pass
         ? {}
         : names.length
           ? { defineEvaluator: addEvaluator, defineEvalPass }
-          : {
-              defineEvaluator: addEvaluator,
-              withFilesystem(options: FilesystemOptions = {}) {
-                const { skills, ...settings } = options;
-                const workspace = filesystemOptionsSchema.parse(settings);
-                const parsedSkills = resourceMapSchema.parse(skills ?? {});
-                if (Object.values(parsedSkills).some((resource) => resource.kind !== 'skill'))
-                  throw new Error('Use resources for knowledge, rules and templates');
-                if (Object.keys(parsedSkills).some((name) => Object.hasOwn(portable, name)))
-                  throw new Error('Duplicate resource name');
-                const { workspace: _previous, ...base } = config;
-                return build(
-                  {
-                    ...base,
-                    filesystem: true,
-                    ...(Object.keys(workspace).length ? { workspace } : {}),
-                  },
-                  {},
-                  undefined,
-                  { ...portable, ...parsedSkills }
-                );
-              },
-            }),
+          : { defineEvaluator: addEvaluator }),
     }) as unknown as AgentDefinition<I, O>;
   }
   return build(parsed);

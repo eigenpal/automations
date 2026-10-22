@@ -58,7 +58,7 @@ export function compileSchema(schema: DefinitionSchema, field: string): JsonSche
 // The compiler inspects callback descriptors but never invokes callbacks. Erasing
 // their input types here allows heterogeneous agent collections without weakening
 // schema types or accepting unfinished evaluator chains.
-type CompilableAgent = Omit<AgentCore, 'evaluation'> & {
+type CompilableAgent = Omit<AgentCore, 'evaluation' | 'withFilesystem'> & {
   readonly evaluation?: AgentEvaluation<never, never>;
   readonly defineEvalPass?: never;
 };
@@ -137,6 +137,8 @@ export function compileAgent(definition: CompilableAgent): CompiledAgent {
     if (evaluation.pass.kind === 'weighted') validateWeightedPass(evaluation.pass, names);
     else if (evaluation.pass.kind !== 'callback' || typeof evaluation.pass.evaluate !== 'function')
       throw new Error('Invalid evaluation pass');
+    if (evaluation.pass.kind === 'callback')
+      assertSynchronousTool(evaluation.pass.evaluate, 'evaluation.pass');
   }
   const compiledEvaluation = evaluation
     ? {

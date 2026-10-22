@@ -31,8 +31,22 @@ const evaluated = agent
     })
   );
 
-// @ts-expect-error Agent configuration is sealed after the first evaluator.
-evaluated.withFilesystem({ cwd: null });
+const filesystemEvaluated = evaluated.withFilesystem({ cwd: null });
+filesystemEvaluated.defineEvalPass(({ accuracy, meaning }) => accuracy === 1 || meaning >= 0.9);
+const completed = filesystemEvaluated.defineEvalPass(() => true).withFilesystem();
+// @ts-expect-error Final pass still closes evaluator registration.
+completed.defineEvaluator('extra', () => 1);
+
+// The authoring program excludes host and browser ambient APIs.
+agent.defineEvaluator('isolated', () => {
+  // @ts-expect-error Node process is unavailable in callbacks.
+  void process;
+  // @ts-expect-error Network fetch is unavailable in callbacks.
+  void fetch;
+  // @ts-expect-error Browser window is unavailable in callbacks.
+  void window;
+  return 1;
+});
 
 evaluated.defineEvalPass(({ accuracy, meaning }) => accuracy === 1 || meaning >= 0.9);
 evaluated.defineEvalPass((scores) => {

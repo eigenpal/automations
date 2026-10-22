@@ -9,7 +9,7 @@ const base = () =>
     outputSchema: z.object({ total: z.number(), summary: z.string() }),
   });
 describe('fluent evaluations', () => {
-  test('configuration, evaluation registration and decision are distinct immutable phases', () => {
+  test('evaluation registration and decisions remain immutable while filesystem capabilities compose', () => {
     const agent = base().withFilesystem({ cwd: null });
     const evaluators = agent.defineEvaluator(
       'fields',
@@ -17,8 +17,8 @@ describe('fluent evaluations', () => {
     );
     const completed = evaluators.defineEvalPass(({ fields }) => fields === 1);
     expect(agent).not.toHaveProperty('evaluation');
-    expect(evaluators).not.toHaveProperty('withFilesystem');
-    expect(completed).not.toHaveProperty('withFilesystem');
+    expect(evaluators.withFilesystem).toBeFunction();
+    expect(completed.withFilesystem).toBeFunction();
     expect(completed).not.toHaveProperty('defineEvaluator');
     expect(completed).not.toHaveProperty('defineEvalPass');
     expect(completed.config.workspace?.cwd).toBeNull();
@@ -29,6 +29,61 @@ describe('fluent evaluations', () => {
     expect(Object.isFrozen(completed.evaluation?.evaluators)).toBe(true);
     expect(() => compileAgent(evaluators as never)).toThrow('defineEvalPass');
   });
+  test('filesystem extension during registration preserves evaluators and the typed registry', () => {
+    const original = base().defineEvaluator('positive', ({ actual }) => (actual.total > 0 ? 1 : 0));
+    const filesystem = original.withFilesystem({
+      cwd: null,
+      files: { 'invoice.txt': 'Subtotal: 100' },
+    });
+    const completed = filesystem
+      .defineEvaluator('summary', ({ actual }) => (actual.summary.length ? 1 : 0))
+      .defineEvalPass(({ positive, summary }) => positive === 1 && summary === 1);
+    expect(original.config.filesystem).toBeUndefined();
+    expect(original.evaluation?.evaluators).toHaveProperty('positive');
+    expect(original.evaluation?.evaluators).not.toHaveProperty('summary');
+    expect(filesystem.evaluation?.evaluators.positive).toBe(
+      original.evaluation?.evaluators.positive
+    );
+    expect(compileAgent(completed).evaluation).toEqual({
+      evaluators: { positive: { kind: 'custom' }, summary: { kind: 'custom' } },
+      pass: { kind: 'callback' },
+    });
+    expect(compileAgent(completed).manifest.workspace?.cwd).toBeNull();
+    expect(() => filesystem.defineEvaluator('positive' as never, () => 1)).toThrow('Duplicate');
+    expect(() => compileAgent(filesystem as never)).toThrow('defineEvalPass');
+  });
+
+  test.each(['callback', 'weighted'] as const)(
+    'completed %s evaluations survive filesystem opt-in and replacement',
+    (kind) => {
+      const registering = base().defineEvaluator('positive', ({ actual }) =>
+        actual.total > 0 ? 1 : 0
+      );
+      const original =
+        kind === 'callback'
+          ? registering.defineEvalPass(({ positive }) => positive === 1)
+          : registering.defineEvalPass(weightedScore({ weights: { positive: 1 }, threshold: 1 }));
+      const empty = original.withFilesystem({
+        cwd: null,
+        files: { 'invoice.txt': 'Subtotal: 100' },
+      });
+      const repository = empty.withFilesystem();
+      expect(compileAgent(original).manifest.filesystem).toBe(false);
+      expect(compileAgent(empty).manifest.workspace?.cwd).toBeNull();
+      expect(compileAgent(repository).manifest.filesystem).toBe(true);
+      expect(compileAgent(repository).manifest).not.toHaveProperty('workspace');
+      expect(empty.evaluation?.evaluators.positive).toBe(original.evaluation?.evaluators.positive);
+      expect(empty.evaluation?.pass).toBe(original.evaluation?.pass);
+      expect(repository.evaluation?.pass).toBe(original.evaluation?.pass);
+      expect(compileAgent(empty).evaluation).toEqual(compileAgent(original).evaluation);
+      expect(empty.inputSchema).toBe(original.inputSchema);
+      expect(empty.outputSchema).toBe(original.outputSchema);
+      expect(Object.isFrozen(empty.evaluation?.evaluators)).toBe(true);
+      expect(empty).not.toHaveProperty('defineEvaluator');
+      expect(empty).not.toHaveProperty('defineEvalPass');
+    }
+  );
+
   test('selectors and callbacks remain available to isolated runtime but absent from compiled data', () => {
     const definition = base()
       .defineEvaluator('positive', ({ actual }) => (actual.total >= 0 ? 1 : 0))
@@ -143,5 +198,69 @@ describe('fluent evaluations', () => {
       )
     ).toThrow();
     expect(() => weightedScore({ weights: { a: 1e308, b: 1e308 }, threshold: 0.5 })).toThrow();
+  });
+});
+
+describe('synchronous evaluation declarations', () => {
+  test.each([
+    ['async', async () => 1],
+    [
+      'generator',
+      function* () {
+        yield 1;
+      },
+    ],
+    [
+      'async generator',
+      async function* () {
+        yield 1;
+      },
+    ],
+  ])('rejects %s callbacks without invoking them', (_name, callback) => {
+    const evaluate = callback as never;
+    expect(() => base().defineEvaluator('score', evaluate)).toThrow(
+      'evaluator.evaluate must be a synchronous callback'
+    );
+    expect(() => base().defineEvaluator('score', { kind: 'custom', evaluate })).toThrow(
+      'evaluator.evaluate must be a synchronous callback'
+    );
+    expect(() => exactDiff({ select: evaluate })).toThrow(
+      'exactDiff.select must be a synchronous callback'
+    );
+    expect(() => base().defineEvaluator('score', { kind: 'exact-diff', select: evaluate })).toThrow(
+      'exactDiff.select must be a synchronous callback'
+    );
+    expect(() => llmJudge({ prompt: 'Compare the invoice answers.', select: evaluate })).toThrow(
+      'llmJudge.select must be a synchronous callback'
+    );
+    const registered = base().defineEvaluator('score', () => 1);
+    expect(() => registered.defineEvalPass(evaluate)).toThrow(
+      'evaluation.pass must be a synchronous callback'
+    );
+    const valid = registered.defineEvalPass(() => true);
+    expect(() =>
+      compileAgent({
+        ...valid,
+        evaluation: { ...valid.evaluation!, pass: { kind: 'callback', evaluate } },
+      })
+    ).toThrow('evaluation.pass must be a synchronous callback');
+  });
+  test('validation does not execute synchronous author callbacks', () => {
+    let calls = 0;
+    const select = () => {
+      calls++;
+      return 1;
+    };
+    compileAgent(
+      base()
+        .defineEvaluator('custom', select)
+        .defineEvaluator('diff', exactDiff({ select }))
+        .defineEvaluator('judge', llmJudge({ prompt: 'Compare the invoice answers.', select }))
+        .defineEvalPass(() => {
+          calls++;
+          return true;
+        })
+    );
+    expect(calls).toBe(0);
   });
 });

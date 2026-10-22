@@ -91,6 +91,8 @@ export interface AgentCore<
   I = DefinitionSchema | undefined,
   O = DefinitionSchema | undefined,
 > extends AutomationDefinition<'agent', I, O> {
+  /** Opt into a sandbox without changing schemas, tools, evaluators or the pass rule. Returns a new definition at the same authoring stage; replaces previous filesystem settings. */
+  withFilesystem(options?: FilesystemOptions): this;
   readonly config: DeepReadonly<AgentConfig>;
   readonly resources?: Readonly<Record<string, ResourceDeclaration>>;
   readonly tools?: Readonly<Record<string, ToolDefinition<never, unknown>>>;
@@ -106,22 +108,20 @@ export interface AgentDefinition<
   I = DefinitionSchema | undefined,
   O = DefinitionSchema | undefined,
 > extends AgentCore<I, O> {
-  /** Opt into a sandbox. Replaces previous filesystem settings; configure before defining evaluators. */
-  withFilesystem(options?: FilesystemOptions): AgentDefinition<I, O>;
-  /** Register a named score from 0 to 1. Closes agent configuration; output types flow into the callback/selector. */
+  /** Register a named score from 0 to 1. Output types flow into the callback/selector; filesystem capability remains composable. */
   defineEvaluator<const N extends string>(
     name: N & EvaluatorName<N>,
     evaluate: EvaluatorInput<InferSchema<O>>
   ): AgentEvaluators<I, O, Record<N, number>>;
 }
-/** Evaluation registration closes configuration; pass closes evaluation registration. */
+/** Evaluation registration preserves filesystem composition; pass closes evaluation registration. */
 export interface AgentEvaluators<I, O, S extends Record<string, number>> extends AgentCore<I, O> {
-  /** Register a named score from 0 to 1. Closes agent configuration; output types flow into the callback/selector. */
+  /** Register a named score from 0 to 1. Output types flow into the callback/selector; filesystem capability remains composable. */
   defineEvaluator<const N extends string>(
     name: N & EvaluatorName<N> & (N extends keyof S ? never : N),
     evaluate: EvaluatorInput<InferSchema<O>>
   ): AgentEvaluators<I, O, S & Record<N, number>>;
-  /** Finish evaluation registration with one typed predicate or weightedScore decision. No further configuration follows. */
+  /** Finish evaluation registration with one typed predicate or weightedScore decision. Filesystem capability can still be extended. */
   defineEvalPass<const W extends Record<string, number>>(
     pass:
       | ((scores: Readonly<S>) => boolean)

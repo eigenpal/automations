@@ -23,7 +23,7 @@ Node.js 22+ and Bun are required. The example depends on `file:../..` so it uses
 - `agents/invoice/variants/repository.ts`: `.withFilesystem()` uses the agent package folder and `AGENT.md`; local invoice/template files plus imported knowledge, rules, template and directory skill.
 - `agents/invoice/variants/project-root.ts`: override `cwd`, seed a file, declare exact npm/Python sandbox library versions.
 - `agents/invoice/variants/empty.ts`: `cwd: null` starts with seeded files, any explicitly attached resources and no repository checkout.
-- `agents/invoice/variants/evaluated.ts`: typed exact comparison, LLM judge, custom evaluator, weighted decision and an alternative boolean callback. Evaluations work with or without filesystem access. Configure filesystem before registering evaluators.
+- `agents/invoice/variants/evaluated.ts`: typed exact comparison, LLM judge, custom evaluator, weighted decision and an alternative boolean callback. Evaluations work with or without filesystem access. The same completed evaluation definition is reused with `.withFilesystem({ cwd: null })`; the original stays filesystem-free.
 - `type-checks.ts`: intentional mistakes marked `@ts-expect-error`. Remove a comment to inspect the diagnostic.
 
 Hover or request completion on tool inputs, evaluator output fields, optional expected values, weight keys, and pass callback score names. All come from the schema and evaluator chain. `maxCredits` limits model credits only; `maxTimeMs` bounds active compute time. Filesystem agents need a deployment with sandbox support; functional agents do not.
@@ -71,3 +71,9 @@ require no deployment or credentials and perform no model calls.
 Datasets stay in platform storage. Evaluation selectors see the full actual output and optional, deeply partial expected output. Defining an LLM judge does not call a model during compilation; running an evaluation does.
 
 See the SDK root README for every property, trigger configuration, limits and supported schema constraints. These examples belong to the release-synchronized public source mirror; they are not bundled into the runtime npm tarball.
+
+The authoring `tsconfig.json` uses `lib: ["ES2022"]` and `types: []` so IDEs flag
+Node and browser globals such as `process`, `window` and `fetch`. The separate
+`tsconfig.verify.json` enables Bun only for the local verification harness.
+These checks do not prove purity: callbacks must still return synchronous,
+JSON-compatible values, and runtime isolation enforces the capability boundary.

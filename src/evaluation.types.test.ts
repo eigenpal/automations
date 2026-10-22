@@ -27,10 +27,32 @@ export function authoringTypeContracts() {
   chain.defineEvalPass(weightedScore({ weights: { fields: 2, judge: 1 }, threshold: 0.7 }));
   // @ts-expect-error misspelled registered name
   chain.defineEvalPass(weightedScore({ weights: { feilds: 2 }, threshold: 0.7 }));
-  // @ts-expect-error not an agent configuration stage
-  chain.withFilesystem();
+  const filesystem = chain.withFilesystem({ cwd: null });
+  filesystem.defineEvaluator('typedAfterFilesystem', ({ actual }) => {
+    const amount: number = actual.total;
+    // @ts-expect-error withFilesystem must preserve exact output inference
+    const wrong: string = actual.total;
+    void wrong;
+    return amount > 0 ? 1 : 0;
+  });
+  filesystem.defineEvalPass(({ fields, judge, positive }) => fields + judge + positive >= 2);
+  // @ts-expect-error filesystem opt-in must not widen the registered score names
+  filesystem.defineEvalPass(({ typo }) => typo === 1);
+  // @ts-expect-error filesystem opt-in must not permit duplicate score names
+  filesystem.defineEvaluator('fields', () => 1);
+  const completed = chain.defineEvalPass(({ fields, judge }) => fields > 0.5 || judge > 0.5);
+  const completedFilesystem = completed.withFilesystem().withFilesystem({ cwd: null });
+  compileAgent(completedFilesystem);
+  // @ts-expect-error filesystem extension cannot reopen evaluator registration
+  completedFilesystem.defineEvaluator('next', () => 1);
+  // @ts-expect-error filesystem extension cannot reopen pass registration
+  completedFilesystem.defineEvalPass(() => true);
   // @ts-expect-error duplicate evaluator
   chain.defineEvaluator('fields', () => 1);
+  // @ts-expect-error custom scores must be synchronous numbers
+  base.defineEvaluator('asyncCustom', async () => 1);
+  // @ts-expect-error pass predicates must be synchronous booleans
+  chain.defineEvalPass(async () => true);
   // @ts-expect-error score callbacks return number
   base.defineEvaluator('bad', () => true);
   base.defineEvaluator(
@@ -105,7 +127,7 @@ export function authoringTypeContracts() {
     chain.config.guards.push({ kind: 'maxTurns', value: 1 });
   }
   if (chain.config.workspace) {
-    // @ts-expect-error nested filesystem configuration cannot change after evaluation registration
+    // @ts-expect-error nested configuration is readonly; derive a new definition with withFilesystem instead
     chain.config.workspace.cwd = null;
   }
   if (chain.tools) {

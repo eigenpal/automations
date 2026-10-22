@@ -28,19 +28,26 @@ for (const [alias, directory] of Object.entries(resourceDirectories)) {
 }
 
 import empty from './agents/invoice/variants/empty.ts';
-import evaluated, { customPass } from './agents/invoice/variants/evaluated.ts';
+import evaluated, { customPass, filesystemEvaluated } from './agents/invoice/variants/evaluated.ts';
 import functional from './agents/invoice/variants/functional.ts';
 import projectRoot from './agents/invoice/variants/project-root.ts';
 import repository from './agents/invoice/variants/repository.ts';
 
-const definitions = [functional, repository, projectRoot, empty, evaluated, customPass].map(
-  (definition) =>
-    compileAgent({
-      ...definition,
-      resources: Object.fromEntries(
-        Object.keys(definition.resources ?? {}).map((alias) => [alias, resolved.get(alias)!])
-      ),
-    })
+const definitions = [
+  functional,
+  repository,
+  projectRoot,
+  empty,
+  evaluated,
+  customPass,
+  filesystemEvaluated,
+].map((definition) =>
+  compileAgent({
+    ...definition,
+    resources: Object.fromEntries(
+      Object.keys(definition.resources ?? {}).map((alias) => [alias, resolved.get(alias)!])
+    ),
+  })
 );
 function check(condition: boolean, message: string): void {
   if (!condition) throw new Error(message);
@@ -59,6 +66,14 @@ check(
 check(definitions[3]!.manifest.workspace?.cwd === null, 'Empty workspace must remain explicit');
 check(definitions[4]!.evaluation?.pass.kind === 'weighted', 'Weighted decision must compile');
 check(definitions[5]!.evaluation?.pass.kind === 'callback', 'Custom decision must compile');
+check(
+  definitions[6]!.manifest.filesystem === true,
+  'Evaluated agent must gain sandbox capabilities'
+);
+check(
+  JSON.stringify(definitions[6]!.evaluation) === JSON.stringify(definitions[4]!.evaluation),
+  'Filesystem variant must retain all evaluators and its pass rule'
+);
 console.log(
-  'PASS: six agent definitions, imported shared resources, filesystem modes and both evaluation decisions. No agents or model calls were executed.'
+  'PASS: seven agent definitions, imported shared resources, filesystem modes and both evaluation decisions. No agents or model calls were executed.'
 );

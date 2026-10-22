@@ -38,6 +38,14 @@ Open [`examples/agents`](examples/agents/README.md) for a standalone IDE project
 functional and filesystem agents, typed tools, evaluations, and all four directory-backed
 shared resource kinds. Its README includes local setup, type checks and Git installation steps.
 
+Read the [agent authoring documentation](https://docs.eigenpal.com/sdks/automations)
+for guides and the [SDK overview](https://docs.eigenpal.com/sdks/overview) to choose
+between the authoring package and API clients. This README is a package reference. Start with [Define an agent](#define-an-agent),
+then [Callback environment and authoring checks](#callback-environment-and-authoring-checks),
+[Shared resources](#shared-resources), and [Define evaluations](#define-evaluations).
+The exported TypeScript declarations provide property documentation and inferred types
+in your IDE.
+
 ## Compilation boundary
 
 ```ts
@@ -327,7 +335,7 @@ Filesystem agents gain the same tools and receive the original resource director
 
 ```ts
 import checks from '../../resources/skills/invoice-checks/resource.ts';
-// Extend the agent configuration before registering evaluators:
+// Add filesystem capabilities at any point, including after evaluation configuration:
 // createAgent({ ... }).withFilesystem({ skills: { checks } });
 ```
 
@@ -429,7 +437,7 @@ const invoice = createAgent({
   files: { 'invoice.txt': 'Supplier: Example Ltd; tax ID: EX123; subtotal: 100; tax rate: 0.2' },
 });
 
-// Finish configuration above before the first defineEvaluator call.
+// Evaluators infer the output schema; filesystem capabilities remain composable.
 const evaluated = invoice
   .defineEvaluator(
     'fields',
@@ -480,23 +488,25 @@ expected fields in the dataset to avoid an evaluation error.
 Pass callbacks only see registered score names. Misspelled output properties and
 score names fail TypeScript checking. Use a Zod output schema for full inference;
 raw JSON Schema and absent output schemas intentionally infer `unknown` and
-require narrowing. Change tools, schemas, guards, or filesystem options on
-`invoice` before registering evaluators; the `evaluated` chain only accepts more
-evaluators and its final pass decision. Either pass branch returns a complete
-agent definition that can be compiled.
+require narrowing. Tools, schemas and guards belong to `createAgent`. Register evaluators, then
+finish with one pass decision. `.withFilesystem(options)` remains available at
+every stage and preserves all schemas, tools, evaluators and the pass rule. It
+returns a new definition; the original is unchanged. Either pass branch returns
+a complete agent definition that can be compiled.
 
 ### Authoring phases
 
 All methods return new immutable definitions. The original base agent is reusable.
 
-1. `createAgent` and `.withFilesystem` configure behavior.
-2. The first `.defineEvaluator(name, evaluate)` closes configuration. Register up
+1. `createAgent` defines tools, schemas, resources and guards.
+2. `.defineEvaluator(name, evaluate)` adds typed evaluation logic. Register up
    to 32 uniquely named evaluators. Names must be stable string literals, begin
    with a letter and contain only letters, digits, `_` or `-`, up to 64 characters.
    Prototype-related names are reserved. Runtime strings and unions are rejected
    by TypeScript because they cannot establish a reliable score registry.
 3. One terminal `.defineEvalPass(predicateOrWeightedScore)` closes registration.
-   Its result has no configuration, evaluator-registration or pass methods.
+   Its result has no evaluator-registration or pass methods. `.withFilesystem`
+   remains available and preserves the completed evaluation configuration.
    An unfinished evaluator chain cannot be compiled or released.
 
 Agents with no evaluation configuration require no pass rule. Evaluation-enabled
@@ -572,5 +582,142 @@ available in either form. Weighting is never silently applied to predicates.
 
 A predicate receives the complete readonly score map and must synchronously
 return `boolean`. Use ordinary `&&`, `||`, comparisons and arithmetic for custom
-logic. A second pass definition, additional evaluator or filesystem change after
-the pass is a type error and unavailable at runtime.
+logic. A second pass definition or additional evaluator after the pass is a type
+error and unavailable at runtime. Filesystem capabilities can still be composed:
+
+```ts
+const reviewer = evaluated.defineEvalPass(({ fields }) => fields === 1);
+export const functionalReviewer = reviewer;
+export const filesystemReviewer = reviewer.withFilesystem({ cwd: null });
+// Both reuse the same evaluators and pass callback; reviewer is unchanged.
+```
+
+### Callback environment and authoring checks
+
+Custom tool `execute` callbacks, custom evaluators, exact-diff and judge selectors,
+and pass callbacks all use the same bounded QuickJS environment, with or without
+`.withFilesystem()`. They can use synchronous JavaScript, local helper modules and
+JSON data. Node APIs, network access, host files and arbitrary npm imports are
+unavailable. Installing packages in a sandbox enables its built-in shell/Python
+tools; it does not grant those packages or capabilities to TypeScript callbacks.
+
+Use `lib: ["ES2022"]` and `types: []` in an authoring TypeScript project to flag
+unsupported ambient Node/browser APIs in the IDE; the example project includes
+this configuration. The compiler checks allowed imports, and declarations reject
+async/generator callbacks without invoking them. These checks do not prove purity
+or termination. A synchronous function returning a Promise indirectly, dynamic
+global access, or bypassing types with `any` still requires runtime validation.
+Runtime isolation and execution limits enforce the boundary.
+
+#### What runs where
+
+Defining an agent builds a declaration. The platform captures its TypeScript source
+and relative helper modules, bundles them, and validates the declaration in an
+isolated compiler. The compiler does not proactively call callback bodies on sample inputs.
+At execution time the relevant callback runs in a fresh QuickJS context. Do not
+use module variables as persistent state between tool calls or runs.
+
+- `createTool({ execute })`: receives schema-validated tool arguments and returns
+  an object matching `outputSchema`. It runs when the model invokes that tool.
+- `.defineEvaluator(name, callback)`: receives readonly `{ actual, expected }`
+  and returns a finite number from 0 to 1. `expected` may be missing or partial.
+  It runs during evaluation, not ordinary agent inference.
+- `exactDiff({ select })`: receives a partial output and returns selected JSON
+  data. The platform invokes it separately for actual and expected outputs, then
+  compares those projections. Handle optional fields explicitly.
+- `llmJudge({ prompt, select })`: the selector receives readonly
+  `{ actual, expected }` and returns JSON data for the judge. The platform makes
+  the model request outside the callback. The selector itself cannot call a model.
+- `.defineEvalPass(callback)`: receives the readonly registered evaluator scores
+  and returns a boolean. It runs after evaluation scores are available.
+
+These contracts are identical for normal and filesystem agents. Both reuse the
+same QuickJS engine as workflow script steps; agent callbacks have their own
+input/output contracts and limits rather than arbitrary workflow-step options.
+
+#### Supported callback code
+
+Use synchronous JavaScript calculations: strings, finite numbers, booleans,
+arrays, plain objects, loops, `Math` calculations, regular expressions and JSON
+operations. Local helper functions and constants are bundled with the definition:
+
+```ts
+// math.ts
+export const taxRate = 0.2;
+export function totalWithTax(subtotal: number) {
+  return subtotal * (1 + taxRate);
+}
+
+// agent.ts
+import { createTool } from '@eigenpal/automations';
+import { z } from 'zod';
+import { totalWithTax } from './math.ts';
+
+const calculateTotal = createTool({
+  description: 'Calculate the total including tax.',
+  inputSchema: z.object({ subtotal: z.number().nonnegative() }),
+  outputSchema: z.object({ total: z.number() }),
+  execute: ({ subtotal }) => ({ total: totalWithTax(subtotal) }),
+});
+```
+
+Use `@eigenpal/automations`, Zod and captured relative modules as source imports.
+These imports do not install arbitrary dependencies into QuickJS. Zod describes
+schemas; its transforms, coercion and custom refinements are not supported by the
+JSON Schema contract described above.
+
+Keep values crossing the callback boundary JSON-compatible. Convert internal
+collections to arrays/objects before returning; do not return functions, symbols,
+`bigint`, cyclic objects or non-finite numbers. Evaluation selectors reject missing
+selected values. Tool results must satisfy their declared object schema.
+
+#### Unsupported callback code
+
+These examples do not become valid by adding `.withFilesystem()`:
+
+```ts
+import fs from 'node:fs'; // No Node built-ins.
+import decimal from 'decimal.js'; // No arbitrary npm runtime imports.
+// await import('./helper.ts'); // No dynamic imports or require().
+
+// execute: async ({ url }) => fetch(url) // No async, fetch or network access.
+// execute: () => process.env.API_KEY    // No environment or host credentials.
+// execute: () => fs.readFileSync(...)   // No filesystem access.
+// execute: () => setTimeout(...)       // No host timers/event loop integration.
+// execute: () => document.title        // No browser DOM.
+```
+
+A callback cannot use E2B APIs, spawn a process, access a database, read an attached
+resource file directly, or obtain an SDK client to start another agent. The SDK
+does not currently expose a general callback context with those capabilities.
+Built-in resource browse/read/template tools are platform operations that the
+agent can invoke, not functions injected into custom callbacks.
+
+For scripts that need files, Python or installed npm libraries, opt into
+`.withFilesystem({ packages: ... })` and let the agent use its sandbox shell/script
+tools. Those scripts run inside the filesystem sandbox. Packages installed there
+are still unavailable to `execute`, selectors and evaluator callbacks. The SDK
+does not currently offer a second `execute` mode for sandbox scripts or Python.
+
+Declaration compilation disables wall-clock time and random sources. Runtime
+callbacks are not guaranteed deterministic: do not use `Date` or `Math.random`
+for reproducible decisions. Prefer explicit input values. No purity annotation
+can turn unavailable host APIs into supported capabilities.
+
+#### Limits and diagnostics
+
+Custom tool and evaluation callback invocations currently have at most 2 seconds
+and 64 MiB of QuickJS memory, with a 512 KiB stack. Deployment script limits may
+be tighter, and an agent's remaining time can further shorten tool execution.
+Tool results and evaluation outputs are limited to 128 KiB; evaluation arguments
+are limited to 256 KiB. These are platform limits, not configurable per callback
+through this SDK. `SCRIPT_ENABLED=false` disables this script runtime too.
+
+TypeScript checks callback argument/return types and, in the example authoring
+project, flags missing Node/browser globals. Compilation rejects unsupported
+imports and async/generator declarations with environment guidance. Runtime checks
+reject returned Promises, invalid scores, schema mismatches and exceeded limits.
+For security, arbitrary callback exception text is not exposed as a diagnostic.
+A synchronous function can still refer to an unavailable global indirectly or
+return a Promise through an untyped helper; those cases can fail only when invoked.
+Test tools and evaluations with representative inputs before releasing an agent.

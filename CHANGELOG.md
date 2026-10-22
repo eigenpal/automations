@@ -1,5 +1,11 @@
 # @eigenpal/automations
 
+## 0.20.73
+
+### Patch Changes
+
+- 095515e: Allow immutable filesystem variants after evaluator and pass registration, preserve inferred evaluator and output types, and reject async/generator evaluation callbacks early. Document callback capabilities, limits and authoring checks.
+
 ## 0.20.71
 
 ### Minor Changes
