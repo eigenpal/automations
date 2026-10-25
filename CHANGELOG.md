@@ -1,5 +1,11 @@
 # @eigenpal/automations
 
+## 0.20.86
+
+### Patch Changes
+
+- ab37b58: An agent input or output schema that carries `.meta({ id })` compiles again. With the updated validation library, its JSON Schema root came back as a reference instead of the object, and compiling failed with "Root schema type must be object".
+
 ## 0.20.73
 
 ### Patch Changes

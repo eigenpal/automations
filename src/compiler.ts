@@ -23,28 +23,44 @@ const portableChecks = new Set([
   'string_format',
 ]);
 
+// zod 4.6 moves a root schema that has `.meta({ id })` into `definitions` and
+// returns only a `$ref` to it. Inline that definition so the root stays the
+// object itself; `definitions` is kept for any self-references.
+function inlineRootRef(json: Record<string, unknown>): Record<string, unknown> {
+  const prefix = '#/definitions/';
+  const definitions = json.definitions as Record<string, unknown> | undefined;
+  if (typeof json.$ref !== 'string' || !json.$ref.startsWith(prefix) || !definitions) return json;
+  const id = json.$ref.slice(prefix.length).replace(/~1/g, '/').replace(/~0/g, '~');
+  const body = definitions[id];
+  if (!body || typeof body !== 'object') return json;
+  const { $ref: _ref, ...rest } = json;
+  return { ...rest, ...(body as Record<string, unknown>) };
+}
+
 export function compileSchema(schema: DefinitionSchema, field: string): JsonSchema {
   try {
     const json =
       schema instanceof z.ZodType
-        ? z.toJSONSchema(schema, {
-            target: 'draft-7',
-            io: 'input',
-            unrepresentable: 'throw',
-            override: ({ zodSchema }) => {
-              const def = zodSchema._zod.def;
-              // JSON Schema validates data; it cannot execute parsing/defaulting logic.
-              if (
-                ['default', 'prefault', 'catch', 'pipe', 'transform'].includes(def.type) ||
-                ('coerce' in def && def.coerce) ||
-                def.checks?.some((check) => !portableChecks.has(check._zod.def.check))
-              ) {
-                throw new Error(
-                  'Parsing effects and custom refinements are not portable; use JSON Schema constraints'
-                );
-              }
-            },
-          })
+        ? inlineRootRef(
+            z.toJSONSchema(schema, {
+              target: 'draft-7',
+              io: 'input',
+              unrepresentable: 'throw',
+              override: ({ zodSchema }) => {
+                const def = zodSchema._zod.def;
+                // JSON Schema validates data; it cannot execute parsing/defaulting logic.
+                if (
+                  ['default', 'prefault', 'catch', 'pipe', 'transform'].includes(def.type) ||
+                  ('coerce' in def && def.coerce) ||
+                  def.checks?.some((check) => !portableChecks.has(check._zod.def.check))
+                ) {
+                  throw new Error(
+                    'Parsing effects and custom refinements are not portable; use JSON Schema constraints'
+                  );
+                }
+              },
+            }) as Record<string, unknown>
+          )
         : schema;
     const parsed = copyJsonSchema(json);
     if (Object.keys(parsed).length !== 0 && parsed.type !== 'object')
